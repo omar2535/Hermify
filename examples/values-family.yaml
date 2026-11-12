@@ -1,0 +1,48 @@
+# A household of three on a small cluster: helm install hermify ./charts/hermify \
+#   -n hermify --create-namespace -f examples/values-family.yaml
+#
+# The chart creates every Secret (random keys, kept across upgrades). For a GitOps repo,
+# create the Secrets yourself (SOPS, Sealed Secrets, External Secrets...) and set
+# existingSecret instead; see README.md.
+
+tenants:
+  - name: alice
+    box:
+      enabled: true
+      authorizedKeys: |
+        ssh-ed25519 AAAA...replace-me alice@laptop
+      # Its own IP for SSH (needs a LoadBalancer implementation such as MetalLB or k3s's
+      # ServiceLB). ssh alice@<that IP>
+      service:
+        type: LoadBalancer
+  - name: bob
+  - name: carol
+    replicas: 0   # set up later; keeps the volume
+
+llm:
+  # Any OpenAI-compatible endpoint. Agents need a model that's good at tool calling.
+  baseUrl: http://litellm.litellm.svc.cluster.local:4000/v1
+  model: qwen3-32b
+  # One key for everyone here; per-person keys go in tenants[].llmApiKey.
+  apiKey: sk-replace-me
+
+openWebui:
+  url: https://chat.example.com
+  ingress:
+    enabled: true
+    className: traefik
+    host: chat.example.com
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+    tls:
+      secretName: chat-example-com-tls
+
+hindsight:
+  ingress:
+    enabled: true
+    className: traefik
+    host: memory.example.com
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+    tls:
+      secretName: memory-example-com-tls

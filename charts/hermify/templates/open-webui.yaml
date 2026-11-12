@@ -1,0 +1,162 @@
+{{- if .Values.openWebui.enabled }}
+{{- $o := .Values.openWebui }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: open-webui-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: open-webui
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- include "hermify.storageClass" . | indent 2 }}
+  resources:
+    requests:
+      storage: {{ $o.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open-webui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: open-webui
+spec:
+  replicas: 1
+  # RWO volume: the old pod must let go of it before the new one can attach.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: open-webui
+  template:
+    metadata:
+      labels:
+        {{- include "hermify.labels" . | nindent 8 }}
+        app: open-webui
+    spec:
+      {{- with $o.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $o.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $o.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: open-webui
+          image: "{{ $o.image.repository }}:{{ $o.image.tag }}"
+          imagePullPolicy: {{ $o.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            {{- with $o.url }}
+            - name: WEBUI_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- range $k, $v := $o.env }}
+            - name: {{ $k }}
+              value: {{ $v | toString | quote }}
+            {{- end }}
+            {{- if .Values.tenants }}
+            # One connection per agent. Open WebUI reads these on its first start only; after
+            # that they live in its database (Admin Panel > Settings > Connections).
+            {{- $urls := list }}
+            {{- $keys := list }}
+            {{- range $i, $t := .Values.tenants }}
+            {{- $urls = append $urls (printf "http://hermes-%s.%s.svc.cluster.local:8642/v1" $t.name $.Release.Namespace) }}
+            {{- $keys = append $keys (printf "$(HERMIFY_AGENT_KEY_%d)" $i) }}
+            - name: HERMIFY_AGENT_KEY_{{ $i }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermify.secretName" (dict "root" $ "t" $t) }}
+                  key: API_SERVER_KEY
+            {{- end }}
+            - name: OPENAI_API_BASE_URLS
+              value: {{ join ";" $urls | quote }}
+            # Kubernetes expands $(VAR) from the variables above, so the keys always match.
+            - name: OPENAI_API_KEYS
+              value: {{ join ";" $keys | quote }}
+            {{- end }}
+          # WEBUI_SECRET_KEY.
+          envFrom:
+            - secretRef:
+                name: {{ $o.existingSecret | default "open-webui-secrets" }}
+          # Loads a local sentence-transformers model for document RAG at startup.
+          resources:
+            {{- toYaml $o.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /app/backend/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: open-webui-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: open-webui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: open-webui
+spec:
+  selector:
+    app: open-webui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- if $o.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: open-webui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: open-webui
+  {{- with $o.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $o.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $o.ingress.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ $o.ingress.host }}
+      secretName: {{ $o.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ required "openWebui.ingress.host is required" $o.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: open-webui
+                port:
+                  number: 8080
+{{- end }}
+{{- end }}

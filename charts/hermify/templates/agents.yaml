@@ -1,0 +1,302 @@
+{{- include "hermify.validate" . }}
+{{- if .Values.tenants }}
+# First-boot seed for every agent's config.yaml (agent.config). The seed-config init
+# container copies it only if the agent's volume has no config.yaml yet.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-config-template
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- tpl .Values.agent.config . | nindent 4 }}
+{{- end }}
+{{- range $t := .Values.tenants }}
+{{- $ctx := dict "root" $ "t" $t }}
+{{- $name := printf "hermes-%s" $t.name }}
+{{- $box := $t.box | default dict }}
+{{- $persistence := $t.persistence | default dict }}
+{{- $env := concat ($.Values.agent.env | default list) ($t.env | default list) }}
+{{- $exportEnv := list $.Values.llm.apiKeyEnv }}
+{{- range $env }}{{ $exportEnv = append $exportEnv .name }}{{ end }}
+{{- $tenantData := dict "API_SERVER_MODEL_NAME" (include "hermify.modelName" $ctx) "HINDSIGHT_BANK_ID" (include "hermify.bankId" $ctx) }}
+---
+# {{ $t.name }}: API_SERVER_MODEL_NAME (the model id in Open WebUI), HINDSIGHT_BANK_ID.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-tenant-{{ $t.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+    app: hermes
+    tenant: {{ $t.name }}
+data:
+  {{- toYaml $tenantData | nindent 2 }}
+---
+# HERMES_HOME (/opt/data): config.yaml, .env, SOUL.md, sessions, skills, logs, workspace.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-data-{{ $t.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+    app: hermes
+    tenant: {{ $t.name }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- include "hermify.storageClass" $ | indent 2 }}
+  resources:
+    requests:
+      storage: {{ $persistence.size | default $.Values.agent.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+    app: hermes
+    tenant: {{ $t.name }}
+spec:
+  replicas: {{ hasKey $t "replicas" | ternary $t.replicas 1 }}
+  # RWO volume: the old pod must let go of it before the new one can attach.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hermes
+      tenant: {{ $t.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "hermify.labels" $ | nindent 8 }}
+        app: hermes
+        tenant: {{ $t.name }}
+        {{- if $box.enabled }}
+        box: "true"
+        {{- end }}
+      annotations:
+        hermify/tenant-checksum: {{ toYaml $tenantData | sha256sum | trunc 16 }}
+        {{- if $box.enabled }}
+        hermify/box-checksum: {{ print ($.Files.Get "files/box-start.sh") $box.authorizedKeys | sha256sum | trunc 16 }}
+        {{- end }}
+        {{- with $.Values.agent.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      # The image starts as root (s6-overlay fixes /opt/data ownership), then drops to
+      # the hermes user, UID 10000.
+      securityContext:
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+      {{- with $.Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.agent.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $.Values.agent.topologySpread }}
+      # Spread the agents evenly over the nodes the affinity allows.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          nodeAffinityPolicy: Honor
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [hermes]
+      {{- end }}
+      initContainers:
+        # Seed config.yaml on first boot only; never overwrite what the person changed.
+        - name: seed-config
+          image: "{{ $.Values.agent.image.repository }}:{{ $.Values.agent.image.tag }}"
+          imagePullPolicy: {{ $.Values.agent.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - '[ -f /opt/data/config.yaml ] || { cp /seed/config.yaml /opt/data/config.yaml && chown 10000:10000 /opt/data/config.yaml; }'
+          resources:
+            requests:
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: seed
+              mountPath: /seed
+      containers:
+        - name: hermes
+          image: "{{ $.Values.agent.image.repository }}:{{ $.Values.agent.image.tag }}"
+          imagePullPolicy: {{ $.Values.agent.image.pullPolicy }}
+          # Keep the image ENTRYPOINT (s6 + first-boot setup); `gateway run` is its CMD.
+          args: ["gateway", "run"]
+          ports:
+            - name: api
+              containerPort: 8642
+          env:
+            # OpenAI-compatible API for Open WebUI. Env wins over config.yaml.
+            - name: API_SERVER_ENABLED
+              value: "true"
+            - name: API_SERVER_HOST
+              value: "0.0.0.0"
+            - name: API_SERVER_PORT
+              value: "8642"
+            {{- if $.Values.hindsight.enabled }}
+            # Hindsight plugin, external server. Only used while the agent has no
+            # $HERMES_HOME/hindsight/config.json (until someone runs `hermes memory setup`).
+            - name: HINDSIGHT_MODE
+              value: local_external
+            - name: HINDSIGHT_API_URL
+              value: {{ include "hermify.hindsightUrl" $ }}
+            {{- end }}
+            {{- with $env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            # API_SERVER_MODEL_NAME, HINDSIGHT_BANK_ID.
+            - configMapRef:
+                name: hermes-tenant-{{ $t.name }}
+            # API_SERVER_KEY and the LLM key ({{ $.Values.llm.apiKeyEnv }}).
+            - secretRef:
+                name: {{ include "hermify.secretName" $ctx }}
+          resources:
+            {{- toYaml ($t.resources | default $.Values.agent.resources) | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          {{- if $box.enabled }}
+          # `restart-agent` in the box creates /opt/data/.restart-agent; this probe deletes
+          # it and fails once, so the kubelet restarts this container only. Never fails
+          # otherwise.
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'if [ -e /opt/data/.restart-agent ]; then rm -f /opt/data/.restart-agent; exit 1; fi'
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 1
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+        {{- if $box.enabled }}
+        # The SSH box: the agent's own image, with `command` replacing its s6 /init, so no
+        # second gateway starts. Logs in as {{ $t.name }} with the agent's UID.
+        - name: box
+          image: "{{ $.Values.agent.image.repository }}:{{ $.Values.agent.image.tag }}"
+          imagePullPolicy: {{ $.Values.agent.image.pullPolicy }}
+          command: ["bash", "/box/start.sh"]
+          env:
+            - name: BOX_USER
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tenant']
+            - name: LANG
+              value: C.UTF-8
+            {{- if $.Values.hindsight.enabled }}
+            - name: HINDSIGHT_MODE
+              value: local_external
+            - name: HINDSIGHT_API_URL
+              value: {{ include "hermify.hindsightUrl" $ }}
+            {{- end }}
+            # The agent's LLM key, so `hermes` in SSH sessions works (config.yaml: key_env).
+            - name: {{ $.Values.llm.apiKeyEnv }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermify.secretName" $ctx }}
+                  key: {{ $.Values.llm.apiKeyEnv }}
+            {{- with $env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            # Variables start.sh passes on to SSH sessions, besides the image's own.
+            - name: BOX_EXPORT_ENV
+              value: {{ $exportEnv | uniq | join " " | quote }}
+          envFrom:
+            # HINDSIGHT_BANK_ID, API_SERVER_MODEL_NAME.
+            - configMapRef:
+                name: hermes-tenant-{{ $t.name }}
+          ports:
+            - name: ssh
+              containerPort: 22
+          # sshd plus whatever the person runs, including `hermes chat`. An OOM kill
+          # restarts only the box.
+          resources:
+            {{- toYaml ($box.resources | default $.Values.box.resources) | nindent 12 }}
+          # apt runs first on every start (cached .debs make it ~20s).
+          readinessProbe:
+            tcpSocket:
+              port: ssh
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: box-home
+              mountPath: /persist
+            - name: box-files
+              mountPath: /box
+              readOnly: true
+            - name: box-keys
+              mountPath: /box-keys
+              readOnly: true
+        {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hermes-data-{{ $t.name }}
+        - name: seed
+          configMap:
+            name: hermes-config-template
+        {{- if $box.enabled }}
+        - name: box-home
+          persistentVolumeClaim:
+            claimName: box-home-{{ $t.name }}
+        - name: box-files
+          configMap:
+            name: box
+            defaultMode: 0444
+        - name: box-keys
+          configMap:
+            name: box-keys-{{ $t.name }}
+            defaultMode: 0444
+        {{- end }}
+---
+# ClusterIP only; Open WebUI is the only allowed client (with networkPolicies on).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+    app: hermes
+    tenant: {{ $t.name }}
+spec:
+  selector:
+    app: hermes
+    tenant: {{ $t.name }}
+  ports:
+    - name: api
+      port: 8642
+      targetPort: api
+{{- end }}

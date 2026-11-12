@@ -1,0 +1,42 @@
+# Flux: install Hermify from its Git repository. Put the per-person Secrets next to this
+# (SOPS-encrypted) and point existingSecret at them, so no key ends up in Helm's history.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: hermify
+  namespace: hermify
+spec:
+  interval: 1h
+  url: https://github.com/OWNER/Hermify   # or ssh://... with spec.secretRef for a private repo
+  ref:
+    tag: v0.1.0                            # or branch: main
+  ignore: |
+    /*
+    !/charts/hermify/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hermify
+  namespace: hermify
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: ./charts/hermify
+      sourceRef:
+        kind: GitRepository
+        name: hermify
+      # Re-package when the chart's files change, not only its version.
+      reconcileStrategy: Revision
+  valuesFrom:
+    - kind: ConfigMap
+      name: hermify-values
+---
+# Example Secret per person (encrypt it before committing):
+#   apiVersion: v1
+#   kind: Secret
+#   metadata: {name: hermes-alice-secrets, namespace: hermify}
+#   stringData:
+#     API_SERVER_KEY: <openssl rand -hex 32>   # Open WebUI -> agent
+#     LLM_API_KEY: <the person's key for your LLM endpoint>

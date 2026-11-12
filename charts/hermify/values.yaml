@@ -1,0 +1,215 @@
+# Hermify: one Hermes Agent per person, shared Hindsight memory, Open WebUI in front.
+# Install one release per namespace: object names are fixed (hermes-<tenant>, hindsight,
+# open-webui, ...), so two releases in one namespace would collide.
+
+# -- The people. Each gets a Deployment, Service and PVC hermes-<name>, a Hindsight bank
+# and a model in Open WebUI. Names: lowercase letters, digits and "-", starting with a
+# letter. The name is also the Linux login in the person's SSH box.
+tenants: []
+# - name: alice
+#   # Secret with API_SERVER_KEY (Open WebUI -> agent) and the LLM key (key name:
+#   # llm.apiKeyEnv). Empty: the chart creates hermes-alice-secrets, with a random
+#   # API_SERVER_KEY and the LLM key from llmApiKey (or llm.apiKey).
+#   existingSecret: ""
+#   llmApiKey: ""
+#   modelName: ""        # model id in Open WebUI; default hermes-alice
+#   bankId: ""           # Hindsight bank; default hermes-alice
+#   replicas: 1          # 0 stops the agent and keeps its data
+#   resources: {}        # default: agent.resources
+#   persistence:
+#     size: ""           # default: agent.persistence.size
+#   env: []              # extra env vars, for both the agent and the box
+#   box:
+#     enabled: false     # SSH box: a sidecar with sshd and the hermes CLI
+#     authorizedKeys: |  # public keys allowed to log in, one per line
+#       ssh-ed25519 AAAA... alice@laptop
+#     persistence:
+#       size: ""         # default: box.persistence.size
+#     service:
+#       type: ""         # default: box.service.type
+#       annotations: {}
+#     # Traefik only: an IngressRouteTCP from this entrypoint (one port per box, since raw
+#     # TCP can't be routed by hostname). You define the entrypoint in Traefik's config.
+#     traefikEntryPoint: ""
+
+# -- The OpenAI-compatible endpoint the agents (and, by default, Hindsight) use:
+# LiteLLM, vLLM, Ollama's /v1, OpenRouter, ...
+llm:
+  # e.g. http://litellm.litellm.svc.cluster.local:4000/v1
+  baseUrl: ""
+  # Default model for every agent, e.g. qwen3-32b. People can change theirs later.
+  model: ""
+  # Name of the env var (and Secret key) that holds each agent's API key.
+  apiKeyEnv: LLM_API_KEY
+  # Fallback key for chart-created Secrets (tenants[].llmApiKey wins). Prefer
+  # existingSecret for real keys. Endpoints without auth can leave this empty.
+  apiKey: ""
+
+# -- StorageClass for every PVC. Empty: the cluster default.
+storageClassName: ""
+
+agent:
+  image:
+    repository: nousresearch/hermes-agent
+    tag: v0.23.1
+    pullPolicy: IfNotPresent
+  # First-boot config.yaml for every agent (run through tpl). Copied onto the agent's
+  # volume only if it has no config.yaml yet; after that the file on the volume is the
+  # source of truth, so changing this does NOT change existing agents.
+  config: |
+    model:
+      provider: custom
+      default: {{ .Values.llm.model }}
+      base_url: {{ .Values.llm.baseUrl }}
+      # The tenant's own key, from its Secret.
+      key_env: {{ .Values.llm.apiKeyEnv }}
+    {{- if .Values.hindsight.enabled }}
+    memory:
+      provider: hindsight
+    {{- end }}
+    terminal:
+      # Tools run inside the agent's own pod; that pod is the sandbox.
+      backend: local
+    agent:
+      disabled_toolsets:
+        # A headless Chromium per pod is what blows the memory budget.
+        # Check toolset names with `hermes tools` if this ever stops matching.
+        - browser
+  # Mostly idle, waiting on the LLM; the limit is headroom for tool runs. An OOM kill only
+  # restarts that person's agent.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  persistence:
+    size: 5Gi
+  # Extra env vars for every agent (and box).
+  env: []
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Spread the agents over the nodes (soft).
+  topologySpread: true
+
+# -- Defaults for the SSH boxes (tenants[].box). A box shares the agent's pod and volume,
+# runs the agent's own image (Debian), and logs in as the tenant with the agent's UID, so
+# `hermes setup`, `hermes chat` and editing ~/agent/.env work as on a normal install.
+box:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 128Mi
+    limits:
+      memory: 1536Mi
+  # Home directory, SSH host key and apt cache.
+  persistence:
+    size: 10Gi
+  service:
+    # ClusterIP (reach it through an ingress controller's TCP route, e.g.
+    # traefikEntryPoint), LoadBalancer (an IP per box) or NodePort.
+    type: ClusterIP
+    annotations: {}
+
+hindsight:
+  # Shared long-term memory: one bank per tenant. Its API has no auth: keep
+  # networkPolicies on, so only the agents can reach it.
+  enabled: true
+  image:
+    repository: ghcr.io/vectorize-io/hindsight
+    tag: "1.2.1"
+    pullPolicy: IfNotPresent
+  # LLM for fact extraction. Empty: llm.baseUrl / llm.model.
+  llm:
+    baseUrl: ""
+    model: ""
+  # Secret with HINDSIGHT_API_LLM_API_KEY and HINDSIGHT_CP_ACCESS_KEY (UI login). Empty: the
+  # chart creates hindsight-secrets, with a random access key and llmApiKey (or llm.apiKey).
+  existingSecret: ""
+  llmApiKey: ""
+  # Plain env vars. The defaults suit the bundled CPU reranker: agents give up on recall
+  # after ~10s, and the reranker costs ~45ms per candidate on a modern 4-vCPU node, and its
+  # memory grows with query length.
+  env:
+    HINDSIGHT_API_RERANKER_MAX_CANDIDATES: "100"
+    HINDSIGHT_API_RECALL_MAX_QUERY_TOKENS: "300"
+    HINDSIGHT_API_RECALL_MAX_CONCURRENT: "16"
+  # Embedded Postgres + local embedding and reranker models: ~1.5Gi steady, with bursts.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1536Mi
+    limits:
+      memory: 4Gi
+  persistence:
+    size: 10Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Control-plane UI (port 9999, logs in with HINDSIGHT_CP_ACCESS_KEY). The API stays
+  # internal.
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: ""
+    tls:
+      secretName: ""
+
+openWebui:
+  # Chat frontend. Each agent shows up as a model (tenants[].modelName). New users are
+  # added by the admin (the first account created).
+  enabled: true
+  image:
+    repository: ghcr.io/open-webui/open-webui
+    tag: v0.13.3
+    pullPolicy: IfNotPresent
+  # Public URL, e.g. https://chat.example.com (WEBUI_URL).
+  url: ""
+  # Secret with WEBUI_SECRET_KEY. Empty: the chart creates open-webui-secrets.
+  existingSecret: ""
+  # Plain env vars. Connections to the agents are set by the chart (OPENAI_API_BASE_URLS /
+  # OPENAI_API_KEYS) but Open WebUI only reads them on its first start: add tenants added
+  # later in Admin Panel > Settings > Connections.
+  env:
+    ENABLE_SIGNUP: "false"
+    ENABLE_OLLAMA_API: "false"
+    ENABLE_OPENAI_API: "true"
+    ENABLE_COMMUNITY_SHARING: "false"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      memory: 2Gi
+  persistence:
+    size: 2Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    host: ""
+    tls:
+      secretName: ""
+
+networkPolicies:
+  # Default-deny ingress for the namespace, then: Open WebUI -> agents, agents -> Hindsight
+  # API, and `ingressFrom` -> Open WebUI, the Hindsight UI and the boxes. Needs a CNI that
+  # enforces NetworkPolicy (k3s does by default).
+  enabled: true
+  # Who may reach Open WebUI, the Hindsight UI and the SSH boxes: your ingress controller.
+  # Default: k3s's bundled Traefik.
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: traefik
+  # More peers for Open WebUI only (e.g. a cloudflared tunnel).
+  openWebuiExtraFrom: []

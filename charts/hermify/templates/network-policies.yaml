@@ -1,0 +1,135 @@
+{{- if .Values.networkPolicies.enabled }}
+{{- $np := .Values.networkPolicies }}
+{{- $anyBox := false }}
+{{- $openBox := false }}
+{{- range $t := .Values.tenants }}
+{{- $box := $t.box | default dict }}
+{{- if $box.enabled }}
+{{- $anyBox = true }}
+{{- if ne (($box.service | default dict).type | default $.Values.box.service.type) "ClusterIP" }}{{ $openBox = true }}{{ end }}
+{{- end }}
+{{- end }}
+# Ingress lockdown for the namespace. Hindsight's API has no auth and banks only separate
+# memory by convention, so only agents may reach it; agents can't reach each other.
+# Egress stays open: agents need the LLM endpoint and the internet for their tools.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+{{- if .Values.openWebui.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-open-webui-to-hermes
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hermes
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: open-webui
+      ports:
+        - port: 8642
+{{- with (concat ($np.ingressFrom | default list) ($np.openWebuiExtraFrom | default list)) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-open-webui
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: open-webui
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - port: 8080
+{{- end }}
+{{- end }}
+{{- if .Values.hindsight.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-hermes-to-hindsight
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: hermes
+      ports:
+        - port: 8888
+{{- if and .Values.hindsight.ingress.enabled $np.ingressFrom }}
+---
+# The Hindsight UI only (it has its own login); never the API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-hindsight-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml $np.ingressFrom | nindent 8 }}
+      ports:
+        - port: 9999
+{{- end }}
+{{- end }}
+{{- if $anyBox }}
+---
+# SSH into the boxes: from the ingress controller, or from anywhere when a box has its own
+# LoadBalancer or NodePort Service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-boxes
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hermes
+      box: "true"
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - port: 22
+      {{- if and (not $openBox) $np.ingressFrom }}
+      from:
+        {{- toYaml $np.ingressFrom | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}

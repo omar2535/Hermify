@@ -1,0 +1,25 @@
+Hermify is installed in namespace {{ .Release.Namespace }} with {{ len .Values.tenants }} agent(s).
+{{- if .Values.openWebui.enabled }}
+
+Open WebUI: {{ .Values.openWebui.url | default "(no openWebui.url set)" }}
+{{- if not .Values.openWebui.ingress.enabled }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/open-webui 8080
+{{- end }}
+  The first account you create there becomes the admin; then add each person in
+  Admin Panel > Users and make their hermes-<name> model visible to them only.
+  Tip: set Admin Panel > Settings > Interface > Task Model to a plain LLM, not an agent.
+{{- end }}
+{{- if .Values.hindsight.enabled }}
+
+Hindsight UI login key:
+  kubectl -n {{ .Release.Namespace }} get secret {{ .Values.hindsight.existingSecret | default "hindsight-secrets" }} -o jsonpath='{.data.HINDSIGHT_CP_ACCESS_KEY}' | base64 -d
+{{- end }}
+{{- range $t := .Values.tenants }}
+{{- if ($t.box | default dict).enabled }}
+
+SSH box for {{ $t.name }}: user {{ $t.name }}, Service ssh-{{ $t.name }} port 22
+{{- end }}
+{{- end }}
+
+Configure an agent (Telegram, model, persona) from its box with `hermes setup`, or:
+  kubectl -n {{ .Release.Namespace }} exec -it deploy/hermes-<name> -c hermes -- hermes setup

@@ -1,0 +1,158 @@
+{{- if .Values.hindsight.enabled }}
+{{- $h := .Values.hindsight }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hindsight-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- include "hermify.storageClass" . | indent 2 }}
+  resources:
+    requests:
+      storage: {{ $h.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hindsight
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight
+spec:
+  replicas: 1
+  # RWO volume: the old pod must let go of it before the new one can attach.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hindsight
+  template:
+    metadata:
+      labels:
+        {{- include "hermify.labels" . | nindent 8 }}
+        app: hindsight
+    spec:
+      securityContext:
+        # The image runs as UID 1000; make the volume writable for it.
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      {{- with $h.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $h.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $h.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: hindsight
+          # The full image bundles the local embedding and reranker models.
+          image: "{{ $h.image.repository }}:{{ $h.image.tag }}"
+          imagePullPolicy: {{ $h.image.pullPolicy }}
+          ports:
+            - name: api
+              containerPort: 8888
+            - name: ui
+              containerPort: 9999
+          env:
+            # Fact extraction through the same OpenAI-compatible endpoint as the agents.
+            - name: HINDSIGHT_API_LLM_PROVIDER
+              value: openai
+            - name: HINDSIGHT_API_LLM_BASE_URL
+              value: {{ $h.llm.baseUrl | default .Values.llm.baseUrl | quote }}
+            - name: HINDSIGHT_API_LLM_MODEL
+              value: {{ $h.llm.model | default .Values.llm.model | quote }}
+            - name: HINDSIGHT_API_WORKER_ID
+              value: hindsight-0
+            {{- range $k, $v := $h.env }}
+            - name: {{ $k }}
+              value: {{ $v | toString | quote }}
+            {{- end }}
+          # HINDSIGHT_API_LLM_API_KEY, HINDSIGHT_CP_ACCESS_KEY (UI login).
+          envFrom:
+            - secretRef:
+                name: {{ $h.existingSecret | default "hindsight-secrets" }}
+          resources:
+            {{- toYaml $h.resources | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            # Embedded Postgres (pg0) data for all banks.
+            - name: data
+              mountPath: /home/hindsight/.pg0
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hindsight-data
+---
+# api (8888, no auth) is for the agents only; ui (9999) logs in with HINDSIGHT_CP_ACCESS_KEY
+# and talks to the API server-side, so only the UI ever needs an ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hindsight
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight
+spec:
+  selector:
+    app: hindsight
+  ports:
+    - name: api
+      port: 8888
+      targetPort: api
+    - name: ui
+      port: 9999
+      targetPort: ui
+{{- if $h.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hindsight
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight
+  {{- with $h.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $h.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $h.ingress.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ $h.ingress.host }}
+      secretName: {{ $h.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ required "hindsight.ingress.host is required" $h.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hindsight
+                port:
+                  name: ui
+{{- end }}
+{{- end }}
