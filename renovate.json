@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "America/Toronto",
+  "schedule": ["* 0-6 * * *"],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "helm-values": {
+    "managerFilePatterns": ["/^charts/hermify/values\\.yaml$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Chart appVersion is the Hermes Agent image tag; same dependency, so it lands in the same PR as agent.image.tag",
+      "managerFilePatterns": ["/^charts/hermify/Chart\\.yaml$/"],
+      "matchStrings": ["appVersion: \"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "nousresearch/hermes-agent",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Every image bump is a chart change: bump the chart's patch version with it, ready to tag",
+      "matchManagers": ["helm-values"],
+      "bumpVersion": "patch"
+    },
+    {
+      "description": "Majors can break agents or migrate data (Hindsight's Postgres, Open WebUI's DB); hold them on the Dependency Dashboard until approved",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Hermes Agent is 0.x: a minor can change config or CLI behaviour the box script relies on, so each minor is its own PR",
+      "matchPackageNames": ["nousresearch/hermes-agent"],
+      "separateMinorPatch": true
+    }
+  ]
+}

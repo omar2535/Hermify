@@ -97,6 +97,12 @@ If you already run these components with the same object names, Helm (and Flux's
 helm template <release> ./charts/hermify -n <ns> -f values.yaml | kubectl diff -f -
 ```
 
+## Updates and releases
+
+Image tags are pinned in [`values.yaml`](charts/hermify/values.yaml) (`agent.image`, `hindsight.image`, `openWebui.image`). [`renovate.json`](renovate.json) has Renovate open a PR for each new tag. The PR also updates `appVersion` for Hermes Agent and bumps the chart's patch version. Majors wait for approval on the Dependency Dashboard. After merging, tag the release (`git tag v<chart version> && git push --tags`) so installs pinned to a tag can move to it.
+
+You can also pin any image in your own values without waiting for a chart release.
+
 ## License
 
 [MIT](LICENSE)
