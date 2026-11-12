@@ -76,7 +76,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "hermify.labels" $ | nindent 8 }}
+        {{- include "hermify.podLabels" $ | nindent 8 }}
         app: hermes
         tenant: {{ $t.name }}
         {{- if $box.enabled }}

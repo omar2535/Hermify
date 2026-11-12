@@ -7,7 +7,7 @@ metadata:
   namespace: hermify
 spec:
   interval: 1h
-  url: https://github.com/OWNER/Hermify   # or ssh://... with spec.secretRef for a private repo
+  url: https://github.com/omar2535/Hermify   # or your fork; ssh://... with spec.secretRef if private
   ref:
     tag: v0.1.0                            # or branch: main
   ignore: |

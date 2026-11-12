@@ -36,7 +36,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "hermify.labels" . | nindent 8 }}
+        {{- include "hermify.podLabels" . | nindent 8 }}
         app: open-webui
     spec:
       {{- with $o.nodeSelector }}

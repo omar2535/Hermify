@@ -203,7 +203,8 @@ networkPolicies:
   # enforces NetworkPolicy (k3s does by default).
   enabled: true
   # Who may reach Open WebUI, the Hindsight UI and the SSH boxes: your ingress controller.
-  # Default: k3s's bundled Traefik.
+  # Default: k3s's bundled Traefik. CHANGE THIS for any other controller (e.g. ingress-nginx
+  # pods in namespace ingress-nginx), or Open WebUI times out behind your ingress.
   ingressFrom:
     - namespaceSelector:
         matchLabels:

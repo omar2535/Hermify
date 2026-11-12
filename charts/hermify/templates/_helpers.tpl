@@ -6,6 +6,12 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end }}
 
+{{/* Labels on pod templates: no chart version, so a chart release alone doesn't restart pods. */}}
+{{- define "hermify.podLabels" -}}
+app.kubernetes.io/part-of: hermify
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
 {{/* storageClassName line for a PVC spec, or nothing for the cluster default. */}}
 {{- define "hermify.storageClass" -}}
 {{- if .Values.storageClassName }}

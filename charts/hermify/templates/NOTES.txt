@@ -1,4 +1,18 @@
 Hermify is installed in namespace {{ .Release.Namespace }} with {{ len .Values.tenants }} agent(s).
+{{- $np := .Values.networkPolicies }}
+{{- $k3sTraefik := list (dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" "kube-system")) "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "traefik"))) }}
+{{- $classes := list .Values.openWebui.ingress.className .Values.hindsight.ingress.className }}
+{{- if and $np.enabled (eq (toJson $np.ingressFrom) (toJson $k3sTraefik)) }}
+{{- range $c := $classes }}
+{{- if and $c (ne $c "traefik") }}
+
+WARNING: an ingress uses class "{{ $c }}", but networkPolicies.ingressFrom only lets in
+k3s's Traefik (kube-system). Requests through "{{ $c }}" will be blocked and time out.
+Point networkPolicies.ingressFrom at your ingress controller's pods (see README).
+{{- break }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if .Values.openWebui.enabled }}
 
 Open WebUI: {{ .Values.openWebui.url | default "(no openWebui.url set)" }}
