@@ -5,7 +5,7 @@ description: >-
   Hindsight long-term memory, Open WebUI as the chat frontend, and optional SSH boxes
   with the hermes CLI.
 type: application
-version: 0.1.1
+version: 0.1.2
 # Hermes Agent image tag the chart is tested with (agent.image.tag).
 appVersion: "v0.23.1"
 home: https://github.com/omar2535/Hermify

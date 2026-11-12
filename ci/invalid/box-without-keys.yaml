@@ -1,0 +1,3 @@
+# Must fail: a box nobody can log in to.
+tenants: [{name: alice, box: {enabled: true}}]
+llm: {baseUrl: http://x/v1, model: m}

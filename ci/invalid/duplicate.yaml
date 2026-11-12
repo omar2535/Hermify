@@ -1,0 +1,3 @@
+# Must fail: same person twice.
+tenants: [{name: alice}, {name: alice}]
+llm: {baseUrl: http://x/v1, model: m}

@@ -1,0 +1,3 @@
+# Must fail: uppercase name.
+tenants: [{name: Alice}]
+llm: {baseUrl: http://x/v1, model: m}

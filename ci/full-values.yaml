@@ -1,0 +1,63 @@
+# CI: every feature on, with existing Secrets, per-tenant overrides and both box exposures.
+tenants:
+  - name: alice
+    existingSecret: alice-secrets
+    modelName: alice-agent
+    bankId: alice-memory
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {memory: 2Gi}
+    persistence: {size: 20Gi}
+    env:
+      - name: ANTHROPIC_API_KEY
+        value: ""
+    box:
+      enabled: true
+      authorizedKeys: |
+        ssh-ed25519 AAAAexample alice@laptop
+      traefikEntryPoint: ssh-alice
+  - name: bob
+    llmApiKey: sk-example
+    box:
+      enabled: true
+      authorizedKeys: ssh-ed25519 AAAAexample bob@laptop
+      service:
+        type: LoadBalancer
+        annotations:
+          metallb.universe.tf/loadBalancerIPs: 192.0.2.10
+  - name: carol
+    replicas: 0
+llm:
+  baseUrl: http://llm.example.svc.cluster.local:4000/v1
+  model: example-model
+  apiKeyEnv: LITELLM_API_KEY
+storageClassName: fast
+agent:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - {key: node-role.kubernetes.io/control-plane, operator: DoesNotExist}
+  tolerations:
+    - {key: dedicated, operator: Equal, value: agents, effect: NoSchedule}
+hindsight:
+  existingSecret: hindsight-secrets
+  ingress:
+    enabled: true
+    className: traefik
+    host: memory.example.com
+    tls: {secretName: memory-tls}
+openWebui:
+  existingSecret: open-webui-secrets
+  url: https://chat.example.com
+  ingress:
+    enabled: true
+    className: traefik
+    host: chat.example.com
+    annotations: {cert-manager.io/cluster-issuer: letsencrypt}
+    tls: {secretName: chat-tls}
+networkPolicies:
+  openWebuiExtraFrom:
+    - namespaceSelector:
+        matchLabels: {kubernetes.io/metadata.name: cloudflare-tunnel}

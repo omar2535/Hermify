@@ -43,11 +43,20 @@ A Helm chart that runs a household (or a small team) of [Hermes Agents](https://
 
 ## Install
 
+Start from [`examples/values-family.yaml`](examples/values-family.yaml): add your people, your LLM endpoint and your hostnames. Then install the released chart from GitHub's registry:
+
 ```sh
-git clone https://github.com/omar2535/Hermify && cd Hermify
-cp examples/values-family.yaml my-values.yaml   # edit: people, LLM endpoint, hostnames
+helm install hermify oci://ghcr.io/omar2535/charts/hermify --version 0.1.2 \
+  -n hermify --create-namespace -f my-values.yaml
+```
+
+Or install from a checkout (`git clone https://github.com/omar2535/Hermify`):
+
+```sh
 helm install hermify ./charts/hermify -n hermify --create-namespace -f my-values.yaml
 ```
+
+`helm show values oci://ghcr.io/omar2535/charts/hermify` prints every option. Releases are listed on the [Releases page](https://github.com/omar2535/Hermify/releases).
 
 Then:
 
@@ -128,7 +137,7 @@ helm template <release> ./charts/hermify -n <ns> -f values.yaml | kubectl diff -
 
 ## Updates and releases
 
-Image tags are pinned in [`values.yaml`](charts/hermify/values.yaml) (`agent.image`, `hindsight.image`, `openWebui.image`). [`renovate.json`](renovate.json) has Renovate open a PR for each new tag. The PR also updates `appVersion` for Hermes Agent and bumps the chart's patch version. Majors wait for approval on the Dependency Dashboard. After merging, tag the release (`git tag v<chart version> && git push --tags`) so installs pinned to a tag can move to it.
+Image tags are pinned in [`values.yaml`](charts/hermify/values.yaml) (`agent.image`, `hindsight.image`, `openWebui.image`). [`renovate.json`](renovate.json) has Renovate open a PR for each new tag. The PR also updates `appVersion` for Hermes Agent and bumps the chart's patch version. Majors wait for approval on the Dependency Dashboard. After merging, tag the release (`git tag v<chart version> && git push --tags`). The Release workflow checks that the tag matches `Chart.yaml`, pushes the chart to `oci://ghcr.io/omar2535/charts/hermify` and creates a GitHub Release. CI (`helm lint`, a render of every file in `ci/` and `examples/` validated with kubeconform, must-fail cases, shellcheck) runs on every PR.
 
 You can also pin any image in your own values without waiting for a chart release.
 

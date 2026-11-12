@@ -1,0 +1,9 @@
+# CI: agents only (no Hindsight, no Open WebUI, no NetworkPolicies).
+tenants:
+  - name: alice
+llm:
+  baseUrl: http://llm.example.svc.cluster.local:4000/v1
+  model: example-model
+hindsight: {enabled: false}
+openWebui: {enabled: false}
+networkPolicies: {enabled: false}

@@ -30,7 +30,7 @@ metadata:
     tenant: {{ $t.name }}
 data:
   authorized_keys: |
-    {{- $box.authorizedKeys | trim | nindent 4 }}
+    {{- $box.authorizedKeys | default "" | toString | trim | nindent 4 }}
 ---
 # /persist in the box: home/, host-keys/ (SSH host key), apt-archives/.
 apiVersion: v1

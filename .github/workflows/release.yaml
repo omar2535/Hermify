@@ -1,0 +1,66 @@
+# On a v* tag: check it matches Chart.yaml, package the chart, push it to
+# oci://ghcr.io/<owner>/charts/hermify and attach the .tgz to a GitHub Release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the GitHub Release
+  packages: write   # push the chart to ghcr.io
+
+env:
+  HELM_VERSION: v3.20.0
+
+jobs:
+  release:
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Tag matches the chart version
+        id: version
+        run: |
+          v=$(helm show chart charts/hermify | awk '/^version:/{print $2}')
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME but charts/hermify/Chart.yaml says version $v"
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Lint
+        run: helm lint charts/hermify --strict -f ci/default-values.yaml
+
+      - name: Package
+        run: helm package charts/hermify --destination dist
+
+      - name: Push to ghcr.io
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push dist/hermify-${{ steps.version.outputs.version }}.tgz "oci://ghcr.io/${OWNER,,}/charts"
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          v=${{ steps.version.outputs.version }}
+          app=$(helm show chart charts/hermify | awk '/^appVersion:/{print $2}' | tr -d '"')
+          cat > notes.md <<EOF
+          Hermify ${v} (Hermes Agent ${app}).
+
+          \`\`\`sh
+          helm install hermify oci://ghcr.io/${OWNER,,}/charts/hermify --version ${v} \\
+            -n hermify --create-namespace -f my-values.yaml
+          \`\`\`
+          EOF
+          gh release create "$GITHUB_REF_NAME" "dist/hermify-${v}.tgz" \
+            --title "Hermify ${v}" --notes-file notes.md --generate-notes

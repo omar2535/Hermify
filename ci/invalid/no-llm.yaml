@@ -1,0 +1,2 @@
+# Must fail: tenants but no LLM endpoint.
+tenants: [{name: alice}]
