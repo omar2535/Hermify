@@ -8,13 +8,6 @@ A Helm chart for running [Hermes Agent](https://github.com/NousResearch/hermes-a
 
 Each person gets their own agent pod, volume, Telegram bot and LLM key. Long-term memory goes through one shared [Hindsight](https://github.com/vectorize-io/hindsight) instance, with a bank per person. [Open WebUI](https://github.com/open-webui/open-webui) is the web frontend, and each agent shows up there as a model. If someone wants a shell, they can get an SSH "box" next to their agent with the `hermes` CLI, so `hermes setup` and friends work like on a normal install. NetworkPolicies keep everything except Open WebUI away from the agents, and everything except the agents away from Hindsight's API.
 
-```
-browser -> Open WebUI -> hermes-alice, hermes-bob, ...  -> your LLM endpoint
-Telegram <-------------- (each agent has its own bot)
-ssh alice@... -> alice's box (same pod, same volume)
-agents -> Hindsight (one bank per person)
-```
-
 ## What you need
 
 - Kubernetes 1.29+ and Helm 3.
