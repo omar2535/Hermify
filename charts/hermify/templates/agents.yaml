@@ -12,7 +12,22 @@ metadata:
 data:
   config.yaml: |
     {{- tpl .Values.agent.config . | nindent 4 }}
+{{- if .Values.agent.outbox.enabled }}
+---
+# The outbox file server (files/outbox-server.py), shared by every agent pod.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-outbox
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+data:
+  server.py: |
+    {{- .Files.Get "files/outbox-server.py" | nindent 4 }}
 {{- end }}
+{{- end }}
+{{- $outbox := .Values.agent.outbox }}
 {{- range $t := .Values.tenants }}
 {{- $ctx := dict "root" $ "t" $t }}
 {{- $name := printf "hermes-%s" $t.name }}
@@ -87,6 +102,9 @@ spec:
         {{- if $box.enabled }}
         hermify/box-checksum: {{ print ($.Files.Get "files/box-start.sh") $box.authorizedKeys | sha256sum | trunc 16 }}
         {{- end }}
+        {{- if $outbox.enabled }}
+        hermify/outbox-checksum: {{ $.Files.Get "files/outbox-server.py" | sha256sum | trunc 16 }}
+        {{- end }}
         {{- with $.Values.agent.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -123,13 +141,16 @@ spec:
       {{- end }}
       initContainers:
         # Seed config.yaml on first boot only; never overwrite what the person changed.
+        {{- if $outbox.enabled }}
+        # Also create the outbox, which the read-only outbox container can't.
+        {{- end }}
         - name: seed-config
           image: "{{ $.Values.agent.image.repository }}:{{ $.Values.agent.image.tag }}"
           imagePullPolicy: {{ $.Values.agent.image.pullPolicy }}
           command:
             - sh
             - -c
-            - '[ -f /opt/data/config.yaml ] || { cp /seed/config.yaml /opt/data/config.yaml && chown 10000:10000 /opt/data/config.yaml; }'
+            - '[ -f /opt/data/config.yaml ] || { cp /seed/config.yaml /opt/data/config.yaml && chown 10000:10000 /opt/data/config.yaml; }{{ if $outbox.enabled }}; [ -d /opt/data/outbox ] || { mkdir /opt/data/outbox && chown 10000:10000 /opt/data/outbox; }{{ end }}'
           resources:
             requests:
               memory: 16Mi
@@ -199,6 +220,51 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /opt/data
+        {{- if $outbox.enabled }}
+        # Read-only file server for /opt/data/outbox; Open WebUI's Hermify files filter is
+        # its only client (key: API_SERVER_KEY). Python from the agent's own image.
+        - name: outbox
+          image: "{{ $.Values.agent.image.repository }}:{{ $.Values.agent.image.tag }}"
+          imagePullPolicy: {{ $.Values.agent.image.pullPolicy }}
+          command: ["python3", "-I", "/outbox/server.py"]
+          env:
+            - name: OUTBOX_DIR
+              value: /opt/data/outbox
+            - name: OUTBOX_PORT
+              value: {{ $outbox.port | quote }}
+            - name: OUTBOX_MAX_BYTES
+              value: {{ $outbox.maxBytes | int64 | quote }}
+            - name: API_SERVER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermify.secretName" $ctx }}
+                  key: API_SERVER_KEY
+          ports:
+            - name: outbox
+              containerPort: {{ $outbox.port }}
+          securityContext:
+            runAsUser: 10000
+            runAsGroup: 10000
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            {{- toYaml $outbox.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: outbox
+            periodSeconds: 30
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+              readOnly: true
+            - name: outbox-server
+              mountPath: /outbox
+              readOnly: true
+        {{- end }}
         {{- if $box.enabled }}
         # The SSH box: the agent's own image, with `command` replacing its s6 /init, so no
         # second gateway starts. Logs in as {{ $t.name }} with the agent's UID.
@@ -267,6 +333,12 @@ spec:
         - name: seed
           configMap:
             name: hermes-config-template
+        {{- if $outbox.enabled }}
+        - name: outbox-server
+          configMap:
+            name: hermes-outbox
+            defaultMode: 0444
+        {{- end }}
         {{- if $box.enabled }}
         - name: box-home
           persistentVolumeClaim:
@@ -299,4 +371,9 @@ spec:
     - name: api
       port: 8642
       targetPort: api
+    {{- if $outbox.enabled }}
+    - name: outbox
+      port: {{ $outbox.port }}
+      targetPort: outbox
+    {{- end }}
 {{- end }}

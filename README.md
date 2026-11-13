@@ -46,7 +46,7 @@ A Helm chart that runs a household (or a small team) of [Hermes Agents](https://
 Start from [`examples/values-family.yaml`](examples/values-family.yaml): add your people, your LLM endpoint and your hostnames. Then install the released chart from GitHub's registry:
 
 ```sh
-helm install hermify oci://ghcr.io/omar2535/charts/hermify --version 0.1.2 \
+helm install hermify oci://ghcr.io/omar2535/charts/hermify --version 0.2.0 \
   -n hermify --create-namespace -f my-values.yaml
 ```
 
@@ -61,8 +61,9 @@ helm install hermify ./charts/hermify -n hermify --create-namespace -f my-values
 Then:
 
 1. **Open WebUI:** the first account you create becomes the admin. Add each person in *Admin Panel → Users*. Then in *Admin Panel → Settings → Models*, make each `hermes-<name>` model visible to its owner only (models are private by default).
-2. **Task Model:** set *Admin Panel → Settings → Interface → Task Model* to a plain LLM connection, not an agent. Titles, tags and follow-ups would otherwise each trigger a full agent run and a memory lookup.
-3. **Each agent:** set up Telegram, persona and so on with `hermes setup`, from the person's box or with `kubectl -n hermify exec -it deploy/hermes-<name> -c hermes -- hermes setup`. Then restart the agent.
+2. **Files:** install the [Hermify files filter](#files-from-agents-in-open-webui) so agents can send files into chats.
+3. **Task Model:** set *Admin Panel → Settings → Interface → Task Model* to a plain LLM connection, not an agent. Titles, tags and follow-ups would otherwise each trigger a full agent run and a memory lookup.
+4. **Each agent:** set up Telegram, persona and so on with `hermes setup`, from the person's box or with `kubectl -n hermify exec -it deploy/hermes-<name> -c hermes -- hermes setup`. Then restart the agent.
 
 Install **one release per namespace**. Object names are fixed (`hermes-<name>`, `hindsight`, `open-webui`), so two releases in one namespace would collide.
 
@@ -80,6 +81,7 @@ Install **one release per namespace**. Object names are fixed (`hermes-<name>`, 
 | `llm.apiKeyEnv` | The env var and Secret key name for the LLM key (default `LLM_API_KEY`). |
 | `storageClassName` | Used by every volume. Empty means the cluster default. |
 | `agent.config` | The first-boot `config.yaml` for every agent. |
+| `agent.outbox` | File delivery to Open WebUI (see [Files from agents](#files-from-agents-in-open-webui)). `enabled`, `port`, `maxBytes`. |
 | `hindsight.*`, `openWebui.*` | Image, resources, persistence, ingress. Each has `enabled` to turn it off. |
 | `networkPolicies.ingressFrom` | Your ingress controller's pods. They may reach Open WebUI, the Hindsight UI and the boxes. The default is k3s's Traefik; change it for anything else. |
 
@@ -104,6 +106,17 @@ To reach a box from outside the cluster:
 - **Traefik:** add an entrypoint per box in Traefik's config (raw TCP can't be routed by hostname), then set `traefikEntryPoint`. The chart creates the `IngressRouteTCP`.
 - **`NodePort`**, or a Cloudflare Tunnel / Tailscale in front.
 
+### Files from agents in Open WebUI
+
+Open WebUI talks to the agents through their chat API, which only carries text, so a spreadsheet or PDF the agent makes would come back as a bare path. Hermify fixes that in two parts:
+
+- **The outbox** (`agent.outbox`, on by default): a small read-only file server in each agent pod. It serves only `/opt/data/outbox` (`~/agent/outbox` in the box), only to Open WebUI (NetworkPolicy), and only with that agent's `API_SERVER_KEY`. Symlinks that lead out of the folder are refused.
+- **The Hermify files filter** ([`openwebui/hermify_files.py`](openwebui/hermify_files.py)), installed once in Open WebUI: *Admin Panel → Functions → New Function*, paste the file, save, then switch it on and make it **Global**. It only acts on Hermify agents (connections whose host starts with `hermes-`).
+  - Before a message goes to an agent, it adds a short note telling the agent to save files under `/opt/data/outbox/` and mention the path.
+  - When the reply comes back, it fetches each mentioned file from that agent's outbox, stores it in Open WebUI **as the person chatting** (only they and admins can open it), and replaces the path with a download link.
+
+Telegram doesn't need any of this: the gateway sends files there natively.
+
 ## Good to know
 
 - **Agent config is seeded once.** `agent.config` is copied onto an agent's volume only if it has no `config.yaml` yet. After that, the file on the volume belongs to the person.
@@ -120,6 +133,7 @@ Hermify is meant for people who trust each other, such as a household or a small
 - **Agents have a shell.** Each agent runs its tools, including the terminal, inside its own pod, unsandboxed (`terminal.backend: local`), with open internet access. Anyone who can chat with an agent can get it to run commands there. The pod limits the damage: other people's agents and files aren't reachable, but that agent's own files, keys and memory are.
 - **Boxes give root inside the container.** SSH users get passwordless `sudo` in their box. That's container root, not node root: the box isn't privileged and keeps the default capabilities. It can read that person's agent files, including their `.env`, and gets their LLM key.
 - **Memory is separated by convention.** Hindsight's API has no auth, and any agent can name any bank. The NetworkPolicies keep everything except the agents away from it, but an agent told to read someone else's bank could. Never expose port 8888 outside the namespace.
+- **The outbox is read by Open WebUI.** Whatever an agent saves in `/opt/data/outbox` can be fetched by Open WebUI with that agent's key, which Open WebUI already holds. Nothing else in the agent's volume is served.
 - **Open WebUI is the front door.** Its accounts and per-model permissions decide who can talk to which agent. Keep sign-up off (the default) and make each `hermes-<name>` model private. If you put it on the internet, put a login in front, such as an identity-aware proxy or VPN.
 - **Secrets created by the chart** live in Helm's release history along with your values. Use `existingSecret` with SOPS, Sealed Secrets or External Secrets for real keys.
 

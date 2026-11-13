@@ -93,6 +93,22 @@ agent:
   affinity: {}
   # Spread the agents over the nodes (soft).
   topologySpread: true
+  # File delivery to Open WebUI. A small read-only file server in each agent pod serves
+  # /opt/data/outbox (~/agent/outbox in the box) to Open WebUI only, behind the agent's
+  # API_SERVER_KEY. The "Hermify files" Open WebUI filter (openwebui/hermify_files.py in
+  # the repo) tells the agent to save files there and turns them into download links for
+  # the person chatting. Without the filter installed, this does nothing.
+  outbox:
+    enabled: true
+    port: 8643
+    # Largest file it will serve.
+    maxBytes: 104857600
+    resources:
+      requests:
+        cpu: 5m
+        memory: 24Mi
+      limits:
+        memory: 96Mi
 
 # -- Defaults for the SSH boxes (tenants[].box). A box shares the agent's pod and volume,
 # runs the agent's own image (Debian), and logs in as the tenant with the agent's UID, so
