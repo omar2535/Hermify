@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Hermify</title>
+  <rect width="256" height="256" rx="56" fill="#22302d"/>
+  <g transform="translate(-8 4)">
+    <!-- wing: three feathers fanning from one root behind the wall; tips cut up and back -->
+    <g fill="#d8673d">
+      <path transform="translate(146 136) rotate(-54)" d="M0 -11 H104 L86 11 H0 A11 11 0 0 1 0 -11 Z"/>
+      <path transform="translate(146 136) rotate(-29)" d="M0 -11 H88 L70 11 H0 A11 11 0 0 1 0 -11 Z"/>
+      <path transform="translate(146 136) rotate(-4)" d="M0 -11 H70 L52 11 H0 A11 11 0 0 1 0 -11 Z"/>
+    </g>
+    <!-- house -->
+    <path d="M104 52 L172 108 L162 108 L162 196 L46 196 L46 108 L36 108 Z" fill="#f1e6d2" stroke="#f1e6d2" stroke-width="6" stroke-linejoin="round"/>
+    <!-- door -->
+    <path d="M89 196 V162 A15 15 0 0 1 119 162 V196 Z" fill="#22302d"/>
+  </g>
+</svg>

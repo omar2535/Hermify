@@ -1,149 +1,142 @@
+<img src="assets/icon.svg" alt="" width="88" align="right">
+
 # Hermify
 
-A Helm chart that runs a household (or a small team) of [Hermes Agents](https://github.com/NousResearch/hermes-agent) on Kubernetes:
+A Helm chart for running [Hermes Agent](https://github.com/NousResearch/hermes-agent) for a few people on one Kubernetes cluster. I built it so everyone in my family could have their own agent without me running a separate box for each of them.
 
-- **One agent per person**: its own pod, volume, settings, Telegram bot and LLM key.
-- **Shared long-term memory** with [Hindsight](https://github.com/vectorize-io/hindsight): one memory bank per person, embeddings and reranking on CPU.
-- **[Open WebUI](https://github.com/open-webui/open-webui)** as the chat frontend, where each agent shows up as a model.
-- **Optional SSH boxes**: a Debian shell next to a person's agent, with the `hermes` CLI, so `hermes setup`, `hermes chat` and editing `~/agent/.env` work just as on a normal install.
-- **NetworkPolicies** that let only Open WebUI talk to the agents and only the agents talk to the memory API.
+Each person gets their own agent pod, volume, Telegram bot and LLM key. Long-term memory goes through one shared [Hindsight](https://github.com/vectorize-io/hindsight) instance, with a bank per person. [Open WebUI](https://github.com/open-webui/open-webui) is the web frontend, and each agent shows up there as a model. If someone wants a shell, they can get an SSH "box" next to their agent with the `hermes` CLI, so `hermes setup` and friends work like on a normal install. NetworkPolicies keep everything except Open WebUI away from the agents, and everything except the agents away from Hindsight's API.
 
 ```
-            Open WebUI ──(API_SERVER_KEY)──▶ hermes-alice ─┐
- browser ─▶ (one model per agent)            hermes-bob   ─┼─▶ your LLM endpoint
-                                             hermes-...   ─┤   (OpenAI-compatible)
- Telegram ◀───────────────────────────────── each agent  ─┘
-                                                  │
- ssh alice@... ─▶ box (sidecar, same volume)      ▼
-                                             Hindsight (bank per person)
+browser -> Open WebUI -> hermes-alice, hermes-bob, ...  -> your LLM endpoint
+Telegram <-------------- (each agent has its own bot)
+ssh alice@... -> alice's box (same pod, same volume)
+agents -> Hindsight (one bank per person)
 ```
 
-## Requirements
+## What you need
 
 - Kubernetes 1.29+ and Helm 3.
-- An **OpenAI-compatible LLM endpoint** the cluster can reach ([LiteLLM](https://github.com/BerriAI/litellm), vLLM, Ollama's `/v1`, OpenRouter...). Agents call tools a lot, so use a model that's good at tool calling. With LiteLLM you can give each person their own key and budget.
-- A StorageClass with ReadWriteOnce volumes.
-- A CNI that enforces NetworkPolicy (k3s's default does). Without one, Hindsight's API, which has no auth, is open to the whole cluster.
-- An ingress controller for the web UIs (any one; optional, since `kubectl port-forward` also works).
+- An OpenAI-compatible LLM endpoint the cluster can reach: [LiteLLM](https://github.com/BerriAI/litellm), vLLM, Ollama's `/v1`, OpenRouter, whatever. Agents call tools constantly, so pick a model that's decent at tool calling. I use LiteLLM so everyone gets their own key and budget.
+- A StorageClass that does ReadWriteOnce.
+- A CNI that enforces NetworkPolicy (k3s's default one does). Without it, Hindsight's API, which has no auth, is open to the whole cluster.
+- An ingress controller if you want the web UIs on a hostname. `kubectl port-forward` works too.
+- Memory: plan on 300–600Mi per agent, about 1.5Gi for Hindsight (it spikes) and 1Gi for Open WebUI.
 
-> [!IMPORTANT]
-> **Not on k3s's bundled Traefik? Set `networkPolicies.ingressFrom`.** The chart denies all ingress to its namespace by default, then lets your ingress controller's pods through. The default selector is k3s's Traefik (`app.kubernetes.io/name: traefik` in `kube-system`). With anything else, Open WebUI just times out. For example, for ingress-nginx:
->
-> ```yaml
-> networkPolicies:
->   ingressFrom:
->     - namespaceSelector:
->         matchLabels:
->           kubernetes.io/metadata.name: ingress-nginx
->       podSelector:
->         matchLabels:
->           app.kubernetes.io/name: ingress-nginx
-> ```
-- Memory: roughly 300–600Mi per agent, ~1.5Gi for Hindsight (with bursts) and ~1Gi for Open WebUI.
+One thing that will bite you if you're not on k3s's bundled Traefik: the chart denies all ingress to its namespace and then lets your ingress controller's pods back in. The default selector matches k3s's Traefik. With anything else Open WebUI just times out until you set `networkPolicies.ingressFrom`. For ingress-nginx it looks like this:
+
+```yaml
+networkPolicies:
+  ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+```
 
 ## Install
 
-Start from [`examples/values-family.yaml`](examples/values-family.yaml): add your people, your LLM endpoint and your hostnames. Then install the released chart from GitHub's registry:
+Copy [`examples/values-family.yaml`](examples/values-family.yaml), fill in your people, LLM endpoint and hostnames, then:
 
 ```sh
 helm install hermify oci://ghcr.io/omar2535/charts/hermify --version 0.2.0 \
   -n hermify --create-namespace -f my-values.yaml
 ```
 
-Or install from a checkout (`git clone https://github.com/omar2535/Hermify`):
+or from a clone of this repo:
 
 ```sh
 helm install hermify ./charts/hermify -n hermify --create-namespace -f my-values.yaml
 ```
 
-`helm show values oci://ghcr.io/omar2535/charts/hermify` prints every option. Releases are listed on the [Releases page](https://github.com/omar2535/Hermify/releases).
+`helm show values oci://ghcr.io/omar2535/charts/hermify` prints every option, and releases are on the [Releases page](https://github.com/omar2535/Hermify/releases).
 
-Then:
+After it's up:
 
-1. **Open WebUI:** the first account you create becomes the admin. Add each person in *Admin Panel → Users*. Then in *Admin Panel → Settings → Models*, make each `hermes-<name>` model visible to its owner only (models are private by default).
-2. **Files:** install the [Hermify files filter](#files-from-agents-in-open-webui) so agents can send files into chats.
-3. **Task Model:** set *Admin Panel → Settings → Interface → Task Model* to a plain LLM connection, not an agent. Titles, tags and follow-ups would otherwise each trigger a full agent run and a memory lookup.
-4. **Each agent:** set up Telegram, persona and so on with `hermes setup`, from the person's box or with `kubectl -n hermify exec -it deploy/hermes-<name> -c hermes -- hermes setup`. Then restart the agent.
+1. Open WebUI: the first account you create is the admin. Add everyone under Admin Panel → Users, then under Settings → Models make each `hermes-<name>` model visible to its owner only.
+2. Install the files filter (see [Files in Open WebUI](#files-in-open-webui)) if you want agents to be able to hand back spreadsheets, PDFs and so on.
+3. Set Admin Panel → Settings → Interface → Task Model to a plain LLM, not an agent. Otherwise every chat title and tag suggestion kicks off a full agent run.
+4. Run `hermes setup` for each agent (Telegram, persona, etc.), either from their box or with `kubectl -n hermify exec -it deploy/hermes-<name> -c hermes -- hermes setup`, then restart the agent.
 
-Install **one release per namespace**. Object names are fixed (`hermes-<name>`, `hindsight`, `open-webui`), so two releases in one namespace would collide.
+Use one release per namespace. Object names are fixed (`hermes-<name>`, `hindsight`, `open-webui`), so two releases in the same namespace would step on each other.
 
-## Values
+## Configuration
 
-[`values.yaml`](charts/hermify/values.yaml) documents every option. The main ones:
+Everything is documented in [`values.yaml`](charts/hermify/values.yaml). The parts you'll actually touch:
 
-| Key | What |
+| Key | What it's for |
 |---|---|
-| `tenants[]` | The people. `name` becomes `hermes-<name>`, the Hindsight bank, the Open WebUI model and the box login. |
-| `tenants[].existingSecret` | Secret holding `API_SERVER_KEY` and the LLM key. Leave it empty to have the chart create one. |
-| `tenants[].replicas` | `0` stops someone's agent but keeps their data. |
-| `tenants[].box` | SSH box: `enabled`, `authorizedKeys`, `service.type`, `traefikEntryPoint`. |
-| `llm.baseUrl` / `llm.model` | The OpenAI-compatible endpoint and the default model. |
-| `llm.apiKeyEnv` | The env var and Secret key name for the LLM key (default `LLM_API_KEY`). |
-| `storageClassName` | Used by every volume. Empty means the cluster default. |
-| `agent.config` | The first-boot `config.yaml` for every agent. |
-| `agent.outbox` | File delivery to Open WebUI (see [Files from agents](#files-from-agents-in-open-webui)). `enabled`, `port`, `maxBytes`. |
-| `hindsight.*`, `openWebui.*` | Image, resources, persistence, ingress. Each has `enabled` to turn it off. |
-| `networkPolicies.ingressFrom` | Your ingress controller's pods. They may reach Open WebUI, the Hindsight UI and the boxes. The default is k3s's Traefik; change it for anything else. |
+| `tenants[]` | The people. `name` is used for the agent (`hermes-<name>`), the Hindsight bank, the Open WebUI model and the box login. |
+| `tenants[].existingSecret` | A Secret with `API_SERVER_KEY` and the LLM key. Leave empty and the chart makes one. |
+| `tenants[].replicas` | Set to `0` to stop someone's agent without losing their data. |
+| `tenants[].box` | The SSH box: `enabled`, `authorizedKeys`, `service.type`, `traefikEntryPoint`. |
+| `llm.baseUrl`, `llm.model` | Your endpoint and default model. |
+| `llm.apiKeyEnv` | Name of the env var / Secret key holding the LLM key (`LLM_API_KEY` by default). |
+| `storageClassName` | For every volume. Empty means the cluster default. |
+| `agent.config` | The `config.yaml` each agent starts with. |
+| `agent.outbox` | File delivery to Open WebUI. On by default. |
+| `hindsight.*`, `openWebui.*` | Image, resources, persistence, ingress, and `enabled` if you don't want one. |
+| `networkPolicies.ingressFrom` | Your ingress controller's pods (see above). |
 
 ### Secrets
 
-With no `existingSecret`, the chart creates `hermes-<name>-secrets`, `hindsight-secrets` and `open-webui-secrets`. Random keys are generated once and kept on upgrades, and a Secret stays behind on uninstall. LLM keys then come from values (`llm.apiKey`, `tenants[].llmApiKey`) and end up in Helm's release history. For a Git repo, create the Secrets yourself (SOPS, Sealed Secrets, External Secrets) and set `existingSecret`:
+If you don't set `existingSecret`, the chart creates `hermes-<name>-secrets`, `hindsight-secrets` and `open-webui-secrets` itself. Random keys are generated once and survive upgrades, and the Secrets are left behind on uninstall. The catch is that LLM keys then come from your values (`llm.apiKey`, `tenants[].llmApiKey`) and end up in Helm's release history. If your values live in Git, create the Secrets yourself (SOPS, Sealed Secrets, External Secrets) and point `existingSecret` at them:
 
 | Secret | Keys |
 |---|---|
-| `tenants[].existingSecret` | `API_SERVER_KEY` (any random string), `<llm.apiKeyEnv>` |
-| `hindsight.existingSecret` | `HINDSIGHT_API_LLM_API_KEY`, `HINDSIGHT_CP_ACCESS_KEY` (login for its UI) |
+| `tenants[].existingSecret` | `API_SERVER_KEY` (any random string), plus the key named by `llm.apiKeyEnv` |
+| `hindsight.existingSecret` | `HINDSIGHT_API_LLM_API_KEY`, `HINDSIGHT_CP_ACCESS_KEY` (the UI login) |
 | `openWebui.existingSecret` | `WEBUI_SECRET_KEY` |
 
-Open WebUI gets each agent's `API_SERVER_KEY` straight from that person's Secret, so the keys always match.
+Open WebUI reads each agent's `API_SERVER_KEY` straight out of that person's Secret, so you never have to copy keys around.
 
 ### SSH boxes
 
-A box is a sidecar container in the person's agent pod. It runs from the agent's own image and shares the agent's volume at `~/agent`. It logs in as the person with the agent's UID, so both can edit the same files. Only the home directory, SSH host key and apt cache persist. Extra packages listed in `~/.box/apt-packages` are reinstalled on every start. `restart-agent` restarts the agent container only, and the SSH session stays up.
+A box is a sidecar container in the person's agent pod, running the agent's own image. It mounts the agent's volume at `~/agent` and logs in as the person with the agent's UID, so both sides can edit the same files. Only the home directory, the SSH host key and the apt cache survive a restart; anything listed in `~/.box/apt-packages` gets reinstalled on start. `restart-agent` restarts just the agent container without dropping your SSH session.
 
-To reach a box from outside the cluster:
-- **`service.type: LoadBalancer`:** one IP per box, port 22.
-- **Traefik:** add an entrypoint per box in Traefik's config (raw TCP can't be routed by hostname), then set `traefikEntryPoint`. The chart creates the `IngressRouteTCP`.
-- **`NodePort`**, or a Cloudflare Tunnel / Tailscale in front.
+Getting to a box from outside the cluster is up to you: a `LoadBalancer` Service (one IP per box), a `NodePort`, Tailscale or a tunnel in front, or a Traefik entrypoint per box. Raw TCP can't be routed by hostname, so with Traefik each box needs its own port; set `traefikEntryPoint` and the chart creates the `IngressRouteTCP`.
 
-### Files from agents in Open WebUI
+### Files in Open WebUI
 
-Open WebUI talks to the agents through their chat API, which only carries text, so a spreadsheet or PDF the agent makes would come back as a bare path. Hermify fixes that in two parts:
+Open WebUI talks to the agents over their chat API, which is text only. Ask an agent for a spreadsheet there and you'd get back a path to a file you can't reach. The fix has two halves.
 
-- **The outbox** (`agent.outbox`, on by default): a small read-only file server in each agent pod. It serves only `/opt/data/outbox` (`~/agent/outbox` in the box), only to Open WebUI (NetworkPolicy), and only with that agent's `API_SERVER_KEY`. Symlinks that lead out of the folder are refused.
-- **The Hermify files filter** ([`openwebui/hermify_files.py`](openwebui/hermify_files.py)), installed once in Open WebUI: *Admin Panel → Functions → New Function*, paste the file, save, then switch it on and make it **Global**. It only acts on Hermify agents (connections whose host starts with `hermes-`).
-  - Before a message goes to an agent, it adds a short note telling the agent to save files under `/opt/data/outbox/` and mention the path.
-  - When the reply comes back, it fetches each mentioned file from that agent's outbox, stores it in Open WebUI **as the person chatting** (only they and admins can open it), and replaces the path with a download link.
+Each agent pod runs a tiny read-only file server (`agent.outbox`) that serves `/opt/data/outbox` and nothing else, only to Open WebUI, and only with that agent's `API_SERVER_KEY`. Symlinks pointing outside the folder are refused.
 
-Telegram doesn't need any of this: the gateway sends files there natively.
+The other half is an Open WebUI filter, [`openwebui/hermify_files.py`](openwebui/hermify_files.py). Add it under Admin Panel → Functions → New Function, then switch it on and make it Global. It only touches chats with Hermify agents. It tells the agent to save files in its outbox, and when the reply comes back it pulls each file over, stores it in Open WebUI as the person who's chatting, and swaps the path for a download link.
 
-## Good to know
+Telegram doesn't need any of this; the gateway already sends files there.
 
-- **Agent config is seeded once.** `agent.config` is copied onto an agent's volume only if it has no `config.yaml` yet. After that, the file on the volume belongs to the person.
-- **Open WebUI reads connections on first start only.** For someone added later, add `http://hermes-<name>.<namespace>.svc.cluster.local:8642/v1` with their `API_SERVER_KEY` in *Admin Panel → Settings → Connections*.
-- **Hindsight recall speed:** the CPU reranker is most of the recall time, and agents give up after about 10s. The default `hindsight.env` caps candidates at 100 and query length at 300 tokens, which keeps recall at 2–5s on a 4-vCPU node with AVX2. Without AVX2 (e.g. a VM with a generic CPU type) it's several times slower.
-- **Hindsight memory:** its reranker's memory grows with query length. If it gets OOM-killed, raise `hindsight.resources.limits.memory` or lower `HINDSIGHT_API_RECALL_MAX_QUERY_TOKENS` / `HINDSIGHT_API_RECALL_MAX_CONCURRENT`.
-- **One gateway per Telegram bot.** Don't run the same agent's gateway anywhere else. Two gateways on one token fight over updates.
-- **Volumes are kept** on uninstall (`helm.sh/resource-policy: keep`). Delete the PVCs yourself to wipe someone's data.
+## Things worth knowing
+
+- `agent.config` is only copied onto a volume that doesn't have a `config.yaml` yet. After the first boot the file belongs to the person, and changing the value won't touch it.
+- Open WebUI only reads its connection list on first start. When you add someone later, add `http://hermes-<name>.<namespace>.svc.cluster.local:8642/v1` with their `API_SERVER_KEY` under Admin Panel → Settings → Connections.
+- Hindsight recall is mostly the CPU reranker, and agents give up waiting after about 10 seconds. The defaults in `hindsight.env` (100 candidates, 300-token queries) keep it at 2–5s on a 4-vCPU node with AVX2. On a VM without AVX2 it's several times slower, so check your CPU type.
+- The reranker's memory grows with query length. If Hindsight gets OOM-killed, raise its memory limit or lower `HINDSIGHT_API_RECALL_MAX_QUERY_TOKENS` / `HINDSIGHT_API_RECALL_MAX_CONCURRENT`.
+- Only run one gateway per Telegram bot. Two gateways on the same token fight over updates.
+- Volumes are kept when you uninstall (`helm.sh/resource-policy: keep`). Delete the PVCs yourself if you really want someone's data gone.
 
 ## Security
 
-Hermify is meant for people who trust each other, such as a household or a small team, on a cluster you control. Know what it gives them:
+This is for people who trust each other, on a cluster you run. Some things to be aware of:
 
-- **Agents have a shell.** Each agent runs its tools, including the terminal, inside its own pod, unsandboxed (`terminal.backend: local`), with open internet access. Anyone who can chat with an agent can get it to run commands there. The pod limits the damage: other people's agents and files aren't reachable, but that agent's own files, keys and memory are.
-- **Boxes give root inside the container.** SSH users get passwordless `sudo` in their box. That's container root, not node root: the box isn't privileged and keeps the default capabilities. It can read that person's agent files, including their `.env`, and gets their LLM key.
-- **Memory is separated by convention.** Hindsight's API has no auth, and any agent can name any bank. The NetworkPolicies keep everything except the agents away from it, but an agent told to read someone else's bank could. Never expose port 8888 outside the namespace.
-- **The outbox is read by Open WebUI.** Whatever an agent saves in `/opt/data/outbox` can be fetched by Open WebUI with that agent's key, which Open WebUI already holds. Nothing else in the agent's volume is served.
-- **Open WebUI is the front door.** Its accounts and per-model permissions decide who can talk to which agent. Keep sign-up off (the default) and make each `hermes-<name>` model private. If you put it on the internet, put a login in front, such as an identity-aware proxy or VPN.
-- **Secrets created by the chart** live in Helm's release history along with your values. Use `existingSecret` with SOPS, Sealed Secrets or External Secrets for real keys.
+Agents have a shell. Tools, including the terminal, run inside the agent's own pod with internet access (`terminal.backend: local`), so anyone who can chat with an agent can get it to run commands. The pod is the boundary: other people's agents and files are out of reach, but that agent's own files, keys and memory aren't.
+
+Boxes come with passwordless `sudo`. That's root inside the container, not on the node (the box isn't privileged and keeps default capabilities), but it can read the person's agent files, `.env` and LLM key included.
+
+Hindsight's API has no auth, and any agent can ask for any bank. The NetworkPolicies keep non-agents out, but memory is only separated by convention between agents. Don't expose port 8888 outside the namespace.
+
+Open WebUI decides who can talk to which agent, so keep sign-up off (the default) and keep each `hermes-<name>` model private. If it's on the internet, put something like an identity-aware proxy or a VPN in front of it. It can also read whatever an agent puts in its outbox, using a key it already has; nothing else on the agent's volume is served.
+
+Secrets the chart generates are stored in Helm's release history next to your values. Use `existingSecret` for anything real.
 
 ## Tested on
 
-k3s 1.33 (bundled Traefik), Longhorn, Flux 2.9, Hermes Agent v0.23.1, Hindsight 1.2.1, Open WebUI v0.13.3. Other setups should work, but haven't been tried yet. Issues and PRs are welcome.
+k3s 1.33 with the bundled Traefik, Longhorn, Flux 2.9, Hermes Agent v0.23.1, Hindsight 1.2.1 and Open WebUI v0.13.3. That's my setup; others should work but I haven't tried them. Issues and PRs welcome.
 
-## Adopting an existing install
+## Moving an existing install onto the chart
 
-If you already run these components with the same object names, Helm (and Flux's helm-controller, which adopts by default) takes over the existing objects. Volumes are reused as long as their names, sizes and StorageClass match. Diff first:
+If you already run these pieces with the same object names, Helm (and Flux's helm-controller, which adopts by default) will take over the existing objects, and volumes are reused as long as the name, size and StorageClass match. Diff before you switch:
 
 ```sh
 helm template <release> ./charts/hermify -n <ns> -f values.yaml | kubectl diff -f -
@@ -151,12 +144,12 @@ helm template <release> ./charts/hermify -n <ns> -f values.yaml | kubectl diff -
 
 ## Updates and releases
 
-Image tags are pinned in [`values.yaml`](charts/hermify/values.yaml) (`agent.image`, `hindsight.image`, `openWebui.image`). [`renovate.json`](renovate.json) has Renovate open a PR for each new tag. The PR also updates `appVersion` for Hermes Agent and bumps the chart's patch version. Majors wait for approval on the Dependency Dashboard. After merging, tag the release (`git tag v<chart version> && git push --tags`). The Release workflow checks that the tag matches `Chart.yaml`, pushes the chart to `oci://ghcr.io/omar2535/charts/hermify` and creates a GitHub Release. CI (`helm lint`, a render of every file in `ci/` and `examples/` validated with kubeconform, must-fail cases, shellcheck) runs on every PR.
+Image tags are pinned in [`values.yaml`](charts/hermify/values.yaml), and Renovate ([`renovate.json`](renovate.json)) opens a PR when a new one comes out, bumping the chart's patch version along with it. Majors wait on the Dependency Dashboard. To release, tag `v<chart version>` and push the tag; the Release workflow checks the tag against `Chart.yaml`, pushes the chart to `oci://ghcr.io/omar2535/charts/hermify` and creates the GitHub Release. CI lints and renders every file in `ci/` and `examples/`, validates them with kubeconform, and checks that the bad-values cases fail.
 
-You can also pin any image in your own values without waiting for a chart release.
+You don't have to wait for a release to get a newer image; pin it in your own values.
 
 ## License
 
-[MIT](LICENSE). Hermify only deploys the upstream images; each project keeps its own license.
+[MIT](LICENSE). Hermify only deploys the upstream images, and each of those projects has its own license.
 
-Hermify is an independent project. It isn't affiliated with or endorsed by Nous Research (Hermes Agent), Vectorize (Hindsight) or Open WebUI.
+Hermify isn't affiliated with or endorsed by Nous Research, Vectorize or Open WebUI.

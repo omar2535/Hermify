@@ -1,14 +1,14 @@
 apiVersion: v2
 name: hermify
 description: >-
-  A household (or team) of Hermes Agents on Kubernetes: one agent per person, shared
-  Hindsight long-term memory, Open WebUI as the chat frontend, and optional SSH boxes
-  with the hermes CLI.
+  Hermes Agent for a household on Kubernetes: an agent per person, shared Hindsight
+  memory, Open WebUI, and optional SSH boxes.
 type: application
 version: 0.2.0
 # Hermes Agent image tag the chart is tested with (agent.image.tag).
 appVersion: "v0.23.1"
 home: https://github.com/omar2535/Hermify
+icon: https://raw.githubusercontent.com/omar2535/Hermify/main/assets/icon.svg
 sources:
   - https://github.com/omar2535/Hermify
   - https://github.com/NousResearch/hermes-agent
