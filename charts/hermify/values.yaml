@@ -178,6 +178,17 @@ hindsight:
         memory: 32Mi
       limits:
         memory: 128Mi
+    # A hostname for the gateway, for agents outside the cluster (say, Hermes on your
+    # laptop). Only the gateway is exposed, never Hindsight's API itself, so every request
+    # still needs a key and opens one bank. Reached from networkPolicies.ingressFrom.
+    # Keep it on your LAN or VPN.
+    ingress:
+      enabled: false
+      className: ""
+      annotations: {}
+      host: ""
+      tls:
+        secretName: ""
   # Control-plane UI (port 9999, logs in with HINDSIGHT_CP_ACCESS_KEY). The API stays
   # internal.
   ingress:

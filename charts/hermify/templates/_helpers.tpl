@@ -58,6 +58,11 @@ http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
 {{- if and .Values.tenants (or (not .Values.llm.baseUrl) (not .Values.llm.model)) }}
 {{- fail "llm.baseUrl and llm.model are required" }}
 {{- end }}
+{{- with .Values.hindsight.gateway }}
+{{- if and .ingress.enabled (not .enabled) }}
+{{- fail "hindsight.gateway.ingress needs hindsight.gateway.enabled: without the gateway it would expose Hindsight's API, which has no per-bank auth" }}
+{{- end }}
+{{- end }}
 {{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" .Values.llm.apiKeyEnv) }}
 {{- fail "llm.apiKeyEnv must be a valid env var name" }}
 {{- end }}

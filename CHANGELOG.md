@@ -4,6 +4,9 @@ Each release's section here is also its GitHub Release notes. Upgrade steps are 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-13
+
+- `hindsight.gateway.ingress`: a hostname for the bank gateway, so agents outside the cluster (Hermes on your laptop, say) can use Hindsight. Only the gateway is exposed, never Hindsight's API, so every request still needs a key and opens one bank. Off by default.
 - Tests for the Hindsight gateway, the outbox server and the Open WebUI filter, run in CI on every PR.
 - `SECURITY.md` and this changelog.
 
@@ -47,7 +50,8 @@ Agents can send files into Open WebUI chats.
 
 First release: one Hermes Agent per person, shared Hindsight memory with a bank each, Open WebUI with every agent as a model, optional SSH boxes, and NetworkPolicies.
 
-[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/omar2535/Hermify/releases/tag/v0.4.0
 [0.3.0]: https://github.com/omar2535/Hermify/releases/tag/v0.3.0
 [0.2.0]: https://github.com/omar2535/Hermify/releases/tag/v0.2.0
 [0.1.2]: https://github.com/omar2535/Hermify/releases/tag/v0.1.2

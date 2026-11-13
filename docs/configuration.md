@@ -34,6 +34,22 @@ networkPolicies:
 
 Those pods can reach Open WebUI, the Hindsight UI and the boxes. If something else needs to reach Open WebUI (a Cloudflare tunnel, say), add it to `networkPolicies.openWebuiExtraFrom`.
 
+## Hindsight from outside the cluster
+
+To let an agent outside the cluster (Hermes on your laptop, say) use Hindsight, give the gateway a hostname:
+
+```yaml
+hindsight:
+  gateway:
+    ingress:
+      enabled: true
+      className: traefik
+      host: memory-api.example.com
+      tls: {secretName: memory-api-tls}
+```
+
+Only the gateway is exposed, never Hindsight's API, so every request still needs a `HINDSIGHT_API_KEY` and opens just that key's bank. The pods in `networkPolicies.ingressFrom` are the ones allowed to reach it. Keep the hostname on your LAN or VPN. On the outside agent, use Hindsight in `local_external` mode with this URL and a key.
+
 ## Secrets
 
 If you don't set `existingSecret`, the chart creates `hermes-<name>-secrets`, `hindsight-secrets` and `open-webui-secrets` itself. Random keys are generated once and survive upgrades, and the Secrets are left behind on uninstall. The catch is that LLM keys then come from your values (`llm.apiKey`, `tenants[].llmApiKey`) and end up in Helm's release history.

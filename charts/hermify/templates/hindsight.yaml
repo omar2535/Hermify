@@ -229,4 +229,42 @@ spec:
                 port:
                   name: ui
 {{- end }}
+{{- if and $gw.enabled $gw.ingress.enabled }}
+---
+# The bank gateway, for agents outside the cluster. The Service's api port leads to the
+# gateway (not to Hindsight's API), so each request still needs a key for one bank.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hindsight-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight
+  {{- with $gw.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $gw.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $gw.ingress.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ $gw.ingress.host }}
+      secretName: {{ $gw.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ required "hindsight.gateway.ingress.host is required" $gw.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hindsight
+                port:
+                  name: api
+{{- end }}
 {{- end }}

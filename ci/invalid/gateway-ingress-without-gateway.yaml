@@ -1,0 +1,7 @@
+# Must fail: exposing the gateway's hostname with the gateway off would expose Hindsight's API.
+tenants: [{name: alice}]
+llm: {baseUrl: http://x/v1, model: m}
+hindsight:
+  gateway:
+    enabled: false
+    ingress: {enabled: true, host: memory-api.example.com}

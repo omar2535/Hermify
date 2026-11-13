@@ -94,6 +94,28 @@ spec:
         {{- else }}
         - port: 8888
         {{- end }}
+{{- if and .Values.hindsight.gateway.enabled .Values.hindsight.gateway.ingress.enabled $np.ingressFrom }}
+---
+# The bank gateway (hindsight.gateway.ingress) for agents outside the cluster: the gateway
+# port only. Hindsight's API port stays reachable from inside its pod only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-hindsight-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml $np.ingressFrom | nindent 8 }}
+      ports:
+        - port: {{ .Values.hindsight.gateway.port }}
+{{- end }}
 {{- if and .Values.hindsight.ingress.enabled $np.ingressFrom }}
 ---
 # The Hindsight UI only (it has its own login); never the API.
