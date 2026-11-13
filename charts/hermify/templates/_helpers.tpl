@@ -47,6 +47,9 @@ http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
 {{- fail (printf "tenants: %q is listed twice" $t.name) }}
 {{- end }}
 {{- $_ := set $seen $t.name true }}
+{{- if and $t.bankId (not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" (toString $t.bankId))) }}
+{{- fail (printf "tenants[%s].bankId: %q must be letters, digits, '.', '_' or '-'" $t.name (toString $t.bankId)) }}
+{{- end }}
 {{- $box := $t.box | default dict }}
 {{- if and $box.enabled (not $box.authorizedKeys) }}
 {{- fail (printf "tenants[%s].box: enabled without authorizedKeys (nobody could log in)" $t.name) }}

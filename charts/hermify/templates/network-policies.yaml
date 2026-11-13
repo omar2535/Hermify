@@ -88,7 +88,12 @@ spec:
             matchLabels:
               app: hermes
       ports:
+        {{- if .Values.hindsight.gateway.enabled }}
+        # The bank gateway only; the API itself (8888) is reachable from inside the pod only.
+        - port: {{ .Values.hindsight.gateway.port }}
+        {{- else }}
         - port: 8888
+        {{- end }}
 {{- if and .Values.hindsight.ingress.enabled $np.ingressFrom }}
 ---
 # The Hindsight UI only (it has its own login); never the API.

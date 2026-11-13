@@ -1,0 +1,3 @@
+# Must fail: a bank id the gateway couldn't match safely (slash).
+tenants: [{name: alice, bankId: "alice/../bob"}]
+llm: {baseUrl: http://x/v1, model: m}

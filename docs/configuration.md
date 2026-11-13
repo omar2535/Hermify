@@ -14,6 +14,7 @@ Every option is documented in [`values.yaml`](../charts/hermify/values.yaml), an
 | `agent.config` | The `config.yaml` each agent starts with (only on first boot, see [Operations](operations.md)). |
 | `agent.outbox` | File delivery to Open WebUI. On by default. See [Files in Open WebUI](files-in-open-webui.md). |
 | `hindsight.*`, `openWebui.*` | Image, resources, persistence, ingress, and `enabled` if you don't want one. |
+| `hindsight.gateway` | Keeps each person's memory bank private (see [Security](security.md)). On by default. |
 | `networkPolicies.ingressFrom` | Your ingress controller's pods (below). |
 
 ## Ingress controllers other than k3s's Traefik
@@ -41,8 +42,8 @@ If your values live in Git, create the Secrets yourself (SOPS, Sealed Secrets, E
 
 | Secret | Keys |
 |---|---|
-| `tenants[].existingSecret` | `API_SERVER_KEY` (any random string), plus the key named by `llm.apiKeyEnv` |
+| `tenants[].existingSecret` | `API_SERVER_KEY` and `HINDSIGHT_API_KEY` (any random strings, e.g. `openssl rand -hex 32`), plus the key named by `llm.apiKeyEnv` |
 | `hindsight.existingSecret` | `HINDSIGHT_API_LLM_API_KEY`, `HINDSIGHT_CP_ACCESS_KEY` (the UI login) |
 | `openWebui.existingSecret` | `WEBUI_SECRET_KEY` |
 
-Open WebUI reads each agent's `API_SERVER_KEY` straight out of that person's Secret, so you never have to copy keys around.
+Open WebUI reads each agent's `API_SERVER_KEY` straight out of that person's Secret, and the Hindsight gateway reads each `HINDSIGHT_API_KEY` the same way, so you never have to copy keys around. A Secret without `HINDSIGHT_API_KEY` doesn't break anything else, but that person's agent can't use memory until you add it (the gateway logs which bank has no key).

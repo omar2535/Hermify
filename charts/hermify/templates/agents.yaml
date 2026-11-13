@@ -34,7 +34,9 @@ data:
 {{- $box := $t.box | default dict }}
 {{- $persistence := $t.persistence | default dict }}
 {{- $env := concat ($.Values.agent.env | default list) ($t.env | default list) }}
+{{- $gateway := and $.Values.hindsight.enabled $.Values.hindsight.gateway.enabled }}
 {{- $exportEnv := list $.Values.llm.apiKeyEnv }}
+{{- if $gateway }}{{ $exportEnv = append $exportEnv "HINDSIGHT_API_KEY" }}{{ end }}
 {{- range $env }}{{ $exportEnv = append $exportEnv .name }}{{ end }}
 {{- $tenantData := dict "API_SERVER_MODEL_NAME" (include "hermify.modelName" $ctx) "HINDSIGHT_BANK_ID" (include "hermify.bankId" $ctx) }}
 ---
@@ -101,6 +103,10 @@ spec:
         hermify/tenant-checksum: {{ toYaml $tenantData | sha256sum | trunc 16 }}
         {{- if $box.enabled }}
         hermify/box-checksum: {{ print ($.Files.Get "files/box-start.sh") $box.authorizedKeys | sha256sum | trunc 16 }}
+        {{- end }}
+        {{- if $gateway }}
+        # Restarts agents when the gateway is turned on, so they pick up HINDSIGHT_API_KEY.
+        hermify/hindsight-gateway: "on"
         {{- end }}
         {{- if $outbox.enabled }}
         hermify/outbox-checksum: {{ $.Files.Get "files/outbox-server.py" | sha256sum | trunc 16 }}
@@ -193,7 +199,7 @@ spec:
             # API_SERVER_MODEL_NAME, HINDSIGHT_BANK_ID.
             - configMapRef:
                 name: hermes-tenant-{{ $t.name }}
-            # API_SERVER_KEY and the LLM key ({{ $.Values.llm.apiKeyEnv }}).
+            # API_SERVER_KEY, the LLM key ({{ $.Values.llm.apiKeyEnv }}) and HINDSIGHT_API_KEY.
             - secretRef:
                 name: {{ include "hermify.secretName" $ctx }}
           resources:
@@ -284,6 +290,15 @@ spec:
               value: local_external
             - name: HINDSIGHT_API_URL
               value: {{ include "hermify.hindsightUrl" $ }}
+            {{- end }}
+            {{- if $gateway }}
+            # The agent's own bank key, so `hermes` in SSH sessions can reach its memory.
+            - name: HINDSIGHT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermify.secretName" $ctx }}
+                  key: HINDSIGHT_API_KEY
+                  optional: true
             {{- end }}
             # The agent's LLM key, so `hermes` in SSH sessions works (config.yaml: key_env).
             - name: {{ $.Values.llm.apiKeyEnv }}
