@@ -1,6 +1,8 @@
-<img src="assets/icon.svg" alt="" width="88" align="right">
+<p align="center">
+  <img src="assets/icon.svg" alt="" width="120">
+</p>
 
-# Hermify
+<h1 align="center">Hermify</h1>
 
 A Helm chart for running [Hermes Agent](https://github.com/NousResearch/hermes-agent) for a few people on one Kubernetes cluster. I built it so everyone in my family could have their own agent without me running a separate box for each of them.
 
