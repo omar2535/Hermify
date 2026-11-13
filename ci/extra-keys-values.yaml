@@ -1,0 +1,8 @@
+# Extra gateway keys: one chart-made, one from an existing Secret with a custom key name.
+tenants: [{name: alice}, {name: bob, existingSecret: bob-secrets}]
+llm: {baseUrl: http://x/v1, model: m}
+hindsight:
+  gateway:
+    extraKeys:
+      - {name: alice-laptop, bank: hermes-alice}
+      - {name: bob-phone, bank: hermes-bob, existingSecret: bob-phone-key, secretKey: TOKEN}

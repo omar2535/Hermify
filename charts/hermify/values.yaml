@@ -178,6 +178,16 @@ hindsight:
         memory: 32Mi
       limits:
         memory: 128Mi
+    # More keys, each opening one existing bank: for an agent outside the cluster that
+    # should share someone's memory (Hermes on their laptop, say) without reusing the
+    # cluster agent's key, so it can be revoked on its own. Changing this list restarts
+    # Hindsight (about a minute).
+    #   - name: alice-laptop        # shows in the gateway log
+    #     bank: hermes-alice        # the bank it opens
+    #     existingSecret: ""        # Secret with the key; empty: the chart creates
+    #                               #   hindsight-key-<name> with a random one
+    #     secretKey: HINDSIGHT_API_KEY
+    extraKeys: []
     # A hostname for the gateway, for agents outside the cluster (say, Hermes on your
     # laptop). Only the gateway is exposed, never Hindsight's API itself, so every request
     # still needs a key and opens one bank. Reached from networkPolicies.ingressFrom.

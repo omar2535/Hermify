@@ -50,6 +50,18 @@ hindsight:
 
 Only the gateway is exposed, never Hindsight's API, so every request still needs a `HINDSIGHT_API_KEY` and opens just that key's bank. The pods in `networkPolicies.ingressFrom` are the ones allowed to reach it. Keep the hostname on your LAN or VPN. On the outside agent, use Hindsight in `local_external` mode with this URL and a key.
 
+Give each outside agent its own key rather than reusing the cluster agent's, so you can revoke one without the other:
+
+```yaml
+hindsight:
+  gateway:
+    extraKeys:
+      - name: alice-laptop     # shows in the gateway log
+        bank: hermes-alice     # shares alice's memory
+```
+
+With no `existingSecret`, the chart creates `hindsight-key-alice-laptop` with a random key; read it with `kubectl get secret hindsight-key-alice-laptop -o jsonpath='{.data.HINDSIGHT_API_KEY}' | base64 -d`. With `existingSecret` (and optionally `secretKey`), the key comes from your own Secret. To revoke a key, remove its entry or change the key in its Secret. Either way Hindsight restarts once, for about a minute, to pick up the change.
+
 ## Secrets
 
 If you don't set `existingSecret`, the chart creates `hermes-<name>-secrets`, `hindsight-secrets` and `open-webui-secrets` itself. Random keys are generated once and survive upgrades, and the Secrets are left behind on uninstall. The catch is that LLM keys then come from your values (`llm.apiKey`, `tenants[].llmApiKey`) and end up in Helm's release history.

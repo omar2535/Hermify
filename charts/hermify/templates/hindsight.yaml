@@ -131,6 +131,8 @@ spec:
               value: http://127.0.0.1:8888
             {{- range $i, $t := .Values.tenants }}
             {{- $ctx := dict "root" $ "t" $t }}
+            - name: HERMIFY_LABEL_{{ $i }}
+              value: {{ $t.name | quote }}
             - name: HERMIFY_BANK_{{ $i }}
               value: {{ include "hermify.bankId" $ctx | quote }}
             # optional: a Secret without the key only locks that person out of memory
@@ -140,6 +142,20 @@ spec:
                 secretKeyRef:
                   name: {{ include "hermify.secretName" $ctx }}
                   key: HINDSIGHT_API_KEY
+                  optional: true
+            {{- end }}
+            {{- $base := len .Values.tenants }}
+            {{- range $j, $x := $gw.extraKeys }}
+            {{- $n := add $base $j }}
+            - name: HERMIFY_LABEL_{{ $n }}
+              value: {{ $x.name | quote }}
+            - name: HERMIFY_BANK_{{ $n }}
+              value: {{ $x.bank | quote }}
+            - name: HERMIFY_KEY_{{ $n }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $x.existingSecret | default (printf "hindsight-key-%s" $x.name) }}
+                  key: {{ $x.secretKey | default "HINDSIGHT_API_KEY" }}
                   optional: true
             {{- end }}
           securityContext:

@@ -59,6 +59,22 @@ http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
 {{- fail "llm.baseUrl and llm.model are required" }}
 {{- end }}
 {{- with .Values.hindsight.gateway }}
+{{- $names := dict }}
+{{- range $x := .extraKeys | default list }}
+{{- if not (regexMatch "^[a-z][a-z0-9-]{0,40}[a-z0-9]$" (toString $x.name)) }}
+{{- fail (printf "hindsight.gateway.extraKeys: name %q must be lowercase letters, digits and -" (toString $x.name)) }}
+{{- end }}
+{{- if hasKey $names $x.name }}
+{{- fail (printf "hindsight.gateway.extraKeys: %q is listed twice" $x.name) }}
+{{- end }}
+{{- $_ := set $names $x.name true }}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" (toString $x.bank)) }}
+{{- fail (printf "hindsight.gateway.extraKeys[%s].bank: %q must be letters, digits, '.', '_' or '-'" $x.name (toString $x.bank)) }}
+{{- end }}
+{{- if and $x.secretKey (not (regexMatch "^[A-Za-z0-9._-]+$" (toString $x.secretKey))) }}
+{{- fail (printf "hindsight.gateway.extraKeys[%s].secretKey: %q isn't a valid Secret key" $x.name (toString $x.secretKey)) }}
+{{- end }}
+{{- end }}
 {{- if and .ingress.enabled (not .enabled) }}
 {{- fail "hindsight.gateway.ingress needs hindsight.gateway.enabled: without the gateway it would expose Hindsight's API, which has no per-bank auth" }}
 {{- end }}

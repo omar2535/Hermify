@@ -4,6 +4,15 @@ Each release's section here is also its GitHub Release notes. Upgrade steps are 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
+- `hindsight.gateway.extraKeys`: more keys for the bank gateway, each opening one existing bank. Give an agent outside the cluster its own key to someone's memory, so it can be revoked without touching the cluster agent. The chart creates the Secret with a random key, or uses yours.
+- The gateway log names the key behind each refused request.
+
+### Upgrading
+
+- Hindsight restarts once (about a minute without memory).
+
 ## [0.4.0] - 2026-11-13
 
 - `hindsight.gateway.ingress`: a hostname for the bank gateway, so agents outside the cluster (Hermes on your laptop, say) can use Hindsight. Only the gateway is exposed, never Hindsight's API, so every request still needs a key and opens one bank. Off by default.
@@ -50,7 +59,8 @@ Agents can send files into Open WebUI chats.
 
 First release: one Hermes Agent per person, shared Hindsight memory with a bank each, Open WebUI with every agent as a model, optional SSH boxes, and NetworkPolicies.
 
-[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/omar2535/Hermify/releases/tag/v0.5.0
 [0.4.0]: https://github.com/omar2535/Hermify/releases/tag/v0.4.0
 [0.3.0]: https://github.com/omar2535/Hermify/releases/tag/v0.3.0
 [0.2.0]: https://github.com/omar2535/Hermify/releases/tag/v0.2.0

@@ -6,8 +6,9 @@ agent sends its own HINDSIGHT_API_KEY as a Bearer token; the key decides the one
 may use. Anything not explicitly allowed is refused: other banks, the bank list, aliases,
 clones, cross-bank transfers, webhooks, global chunk/file lookups, MCP.
 
-Config (env): GATEWAY_PORT, UPSTREAM (http://127.0.0.1:8888), and for each tenant
-HERMIFY_KEY_<n> / HERMIFY_BANK_<n>. Standard library only.
+Config (env): GATEWAY_PORT, UPSTREAM (http://127.0.0.1:8888), and for each key
+HERMIFY_KEY_<n> / HERMIFY_BANK_<n> (plus HERMIFY_LABEL_<n>, the name shown in the log).
+Several keys may open the same bank. Standard library only.
 """
 
 import hashlib
@@ -24,14 +25,17 @@ UPSTREAM = urllib.parse.urlsplit(os.environ.get("UPSTREAM", "http://127.0.0.1:88
 MAX_BODY = int(os.environ.get("GATEWAY_MAX_BODY", str(64 * 1024 * 1024)))
 TIMEOUT = float(os.environ.get("GATEWAY_UPSTREAM_TIMEOUT", "600"))
 
-# sha256(key) -> bank id
+# sha256(key) -> bank id, and -> the key's name for the log
 BANKS: dict[str, str] = {}
+LABELS: dict[str, str] = {}
 for name, value in os.environ.items():
     m = re.fullmatch(r"HERMIFY_KEY_(\d+)", name)
     if m and value:
         bank = os.environ.get(f"HERMIFY_BANK_{m.group(1)}", "")
         if bank:
-            BANKS[hashlib.sha256(value.encode()).hexdigest()] = bank
+            digest = hashlib.sha256(value.encode()).hexdigest()
+            BANKS[digest] = bank
+            LABELS[digest] = os.environ.get(f"HERMIFY_LABEL_{m.group(1)}", "") or bank
 
 # No bank needed: harmless, read-only.
 GLOBAL_GET = {"/version", "/v1/version", "/health", "/health/live", "/health/ready", "/v1/bank-template-schema"}
@@ -121,12 +125,13 @@ class Handler(BaseHTTPRequestHandler):
         else:
             auth = self.headers.get("Authorization") or ""
             key = auth[7:].strip() if auth[:7].lower() == "bearer " else ""
-            bank = BANKS.get(hashlib.sha256(key.encode()).hexdigest()) if key else None
+            digest = hashlib.sha256(key.encode()).hexdigest()
+            bank = BANKS.get(digest) if key else None
             if not bank:
                 self.close_connection = True
                 return self._reply(401, "Hindsight gateway: missing or unknown API key")
             if not allowed(self.command, path, bank):
-                self.log_message('denied %s %s (bank %s)', self.command, path, bank)
+                self.log_message('denied %s %s (key %s, bank %s)', self.command, path, LABELS.get(digest), bank)
                 self.close_connection = True
                 return self._reply(403, "Hindsight gateway: not allowed for this key")
 
@@ -195,5 +200,6 @@ if __name__ == "__main__":
     for bank in sorted(configured - set(BANKS.values())):
         print(f"hindsight-gateway: no key for bank {bank} (HINDSIGHT_API_KEY missing from its Secret); "
               "that agent can't use memory", file=sys.stderr, flush=True)
-    print(f"hindsight-gateway: {len(BANKS)} key(s), :{PORT} -> {UPSTREAM.geturl()}", flush=True)
+    print(f"hindsight-gateway: {len(BANKS)} key(s) ({', '.join(sorted(LABELS.values()))}), "
+          f":{PORT} -> {UPSTREAM.geturl()}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

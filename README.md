@@ -22,7 +22,7 @@ Not on k3s's bundled Traefik? Set `networkPolicies.ingressFrom` to your ingress 
 Copy [`examples/values-family.yaml`](examples/values-family.yaml), fill in your people, LLM endpoint and hostnames, then:
 
 ```sh
-helm install hermify oci://ghcr.io/omar2535/charts/hermify --version 0.4.0 \
+helm install hermify oci://ghcr.io/omar2535/charts/hermify --version 0.5.0 \
   -n hermify --create-namespace -f my-values.yaml
 ```
 

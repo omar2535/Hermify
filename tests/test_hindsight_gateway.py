@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler
 from helpers import FILES, load, raw, request, serve
 
 KEY_A, KEY_B = "key-alice-0123456789", "key-bob-9876543210"
+KEY_LAPTOP = "key-alice-laptop-5555555555"
 A, B = "/v1/default/banks/hermes-alice", "/v1/default/banks/hermes-bob"
 
 
@@ -54,11 +55,15 @@ class GatewayTest(unittest.TestCase):
         cls.upstream = serve(FakeHindsight)
         mod = load(FILES / "hindsight-gateway.py", "hindsight_gateway", {
             "UPSTREAM": f"http://127.0.0.1:{cls.upstream.server_port}",
-            "HERMIFY_KEY_0": KEY_A, "HERMIFY_BANK_0": "hermes-alice",
-            "HERMIFY_KEY_1": KEY_B, "HERMIFY_BANK_1": "hermes-bob",
+            "HERMIFY_KEY_0": KEY_A, "HERMIFY_BANK_0": "hermes-alice", "HERMIFY_LABEL_0": "alice",
+            "HERMIFY_KEY_1": KEY_B, "HERMIFY_BANK_1": "hermes-bob", "HERMIFY_LABEL_1": "bob",
             "HERMIFY_BANK_2": "hermes-nokey",  # Secret without the key: locked out
+            # An extra key (hindsight.gateway.extraKeys): alice's laptop, same bank.
+            "HERMIFY_KEY_3": KEY_LAPTOP, "HERMIFY_BANK_3": "hermes-alice", "HERMIFY_LABEL_3": "alice-laptop",
         })
-        mod.Handler.log_message = lambda *a: None
+        cls.denials = []
+        mod.Handler.log_message = lambda self, fmt, *a: cls.denials.append(fmt % a) if fmt.startswith("denied") else None
+        cls.mod = mod
         cls.gw = serve(mod.Handler)
         cls.port = cls.gw.server_port
 
@@ -104,6 +109,25 @@ class GatewayTest(unittest.TestCase):
     def test_each_key_maps_to_its_own_bank(self):
         self.assertForwarded("GET", B + "/stats", key=KEY_B)
         self.assertRefused("GET", A + "/stats", key=KEY_B)
+
+    def test_extra_key_shares_one_bank_only(self):
+        # The laptop key opens alice's bank, like alice's own key, and nothing else.
+        self.assertForwarded("POST", A + "/memories/recall", key=KEY_LAPTOP, body={"query": "q"})
+        self.assertForwarded("GET", A + "/stats", key=KEY_LAPTOP)
+        self.assertRefused("GET", B + "/stats", key=KEY_LAPTOP)
+        self.assertRefused("GET", "/v1/default/banks", key=KEY_LAPTOP)
+        # Alice's own key is unaffected by the extra one.
+        self.assertForwarded("GET", A + "/stats", key=KEY_A)
+
+    def test_denials_name_the_key(self):
+        self.denials.clear()
+        self.call("GET", B + "/stats", key=KEY_LAPTOP)
+        self.call("GET", B + "/stats", key=KEY_A)
+        self.assertEqual(len(self.denials), 2)
+        self.assertIn("key alice-laptop, bank hermes-alice", self.denials[0])
+        self.assertIn("key alice, bank hermes-alice", self.denials[1])
+        self.assertNotIn(KEY_LAPTOP, " ".join(self.denials))
+        self.assertNotIn(KEY_A, " ".join(self.denials))
 
     def test_harmless_globals(self):
         self.assertForwarded("GET", "/version")
