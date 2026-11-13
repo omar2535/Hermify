@@ -8,11 +8,23 @@ You don't have to wait for a release to get a newer image; pin it in your own va
 
 ## Releasing
 
-Bump `version` in `charts/hermify/Chart.yaml`, then tag `v<chart version>` and push the tag. The Release workflow checks the tag against `Chart.yaml`, pushes the chart to `oci://ghcr.io/omar2535/charts/hermify` and creates the GitHub Release.
+1. Bump `version` in `charts/hermify/Chart.yaml`.
+2. In [`CHANGELOG.md`](../CHANGELOG.md), rename `[Unreleased]` to the new version and date, with an **Upgrading** part if people need to do anything.
+3. Tag `v<chart version>` and push the tag.
+
+The Release workflow checks the tag against `Chart.yaml`, pushes the chart to `oci://ghcr.io/omar2535/charts/hermify` and creates the GitHub Release with that version's CHANGELOG section as its notes. It fails if the section is missing.
 
 ## CI
 
-On every PR and push to `main`: `helm lint`, a render of every file in `ci/` and `examples/` validated with kubeconform, the bad-values cases in `ci/invalid/` (which must fail with the chart's own error), and shellcheck on the box script.
+On every PR and push to `main`:
+
+- `helm lint`, a render of every file in `ci/` and `examples/` validated with kubeconform, and the bad-values cases in `ci/invalid/` (which must fail with the chart's own error)
+- shellcheck on the box script
+- the tests in `tests/` for the Hindsight gateway, the outbox server and the Open WebUI filter, on Python 3.11 and 3.13. They're standard library only, so you can run them anywhere:
+
+```sh
+python3 -m unittest discover -s tests -t tests
+```
 
 To try a change on a real cluster, install it in a throwaway namespace:
 

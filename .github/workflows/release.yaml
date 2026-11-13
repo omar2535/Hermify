@@ -54,13 +54,21 @@ jobs:
         run: |
           v=${{ steps.version.outputs.version }}
           app=$(helm show chart charts/hermify | awk '/^appVersion:/{print $2}' | tr -d '"')
-          cat > notes.md <<EOF
-          Hermify ${v} (Hermes Agent ${app}).
-
-          \`\`\`sh
-          helm install hermify oci://ghcr.io/${OWNER,,}/charts/hermify --version ${v} \\
-            -n hermify --create-namespace -f my-values.yaml
-          \`\`\`
-          EOF
+          # This version's section of CHANGELOG.md, without its heading.
+          awk -v v="$v" 'index($0, "## [" v "]") == 1 {on=1; next} /^## \[/ {on=0} /^\[[^]]+\]: / {on=0} on' CHANGELOG.md > changes.md
+          if ! grep -q '[^[:space:]]' changes.md; then
+            echo "::error::CHANGELOG.md has no section for [$v]"
+            exit 1
+          fi
+          {
+            cat changes.md
+            echo
+            echo "Hermes Agent ${app}. Install:"
+            echo
+            echo '```sh'
+            echo "helm install hermify oci://ghcr.io/${OWNER,,}/charts/hermify --version ${v} \\"
+            echo "  -n hermify --create-namespace -f my-values.yaml"
+            echo '```'
+          } > notes.md
           gh release create "$GITHUB_REF_NAME" "dist/hermify-${v}.tgz" \
-            --title "Hermify ${v}" --notes-file notes.md --generate-notes
+            --title "Hermify ${v}" --notes-file notes.md

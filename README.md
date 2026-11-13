@@ -41,6 +41,7 @@ Then:
 - [Operations](docs/operations.md): gotchas, Hindsight tuning, adopting an existing install
 - [Security](docs/security.md)
 - [Development and releases](docs/development.md)
+- [Changelog](CHANGELOG.md) and [reporting a security issue](SECURITY.md)
 
 ## License
 
