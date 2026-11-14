@@ -27,6 +27,11 @@ Open WebUI: {{ .Values.openWebui.url | default "(no openWebui.url set)" }}
 
 Hindsight UI login key:
   kubectl -n {{ .Release.Namespace }} get secret {{ .Values.hindsight.existingSecret | default "hindsight-secrets" }} -o jsonpath='{.data.HINDSIGHT_CP_ACCESS_KEY}' | base64 -d
+{{- if .Values.hindsight.gateway.enabled }}
+
+Memory keys (hindsight-gateway admin UI): {{ if .Values.hindsight.gateway.adminIngress.enabled }}https://{{ .Values.hindsight.gateway.adminIngress.host }}{{ else }}kubectl -n {{ .Release.Namespace }} port-forward svc/hindsight-gateway 8890{{ end }}
+  Password: kubectl -n {{ .Release.Namespace }} get secret {{ .Values.hindsight.gateway.existingSecret | default "hindsight-gateway-secrets" }} -o jsonpath='{.data.HGW_ADMIN_PASSWORD}' | base64 -d
+{{- end }}
 {{- end }}
 {{- range $t := .Values.tenants }}
 {{- if ($t.box | default dict).enabled }}

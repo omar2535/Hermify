@@ -34,6 +34,28 @@ networkPolicies:
 
 Those pods can reach Open WebUI, the Hindsight UI and the boxes. If something else needs to reach Open WebUI (a Cloudflare tunnel, say), add it to `networkPolicies.openWebuiExtraFrom`.
 
+## Memory keys
+
+Agents reach Hindsight through [hindsight-gateway](https://github.com/omar2535/hindsight-gateway), which gives each key one bank. Each agent's `HINDSIGHT_API_KEY` is imported from its Secret when the gateway starts; after that, its admin UI owns the keys. There you can create keys (for an agent outside the cluster, say), move a key to another bank, and disable, rotate or delete keys. A key you rotate or delete there stays that way: its Secret's old value isn't imported again. If you rotate an agent's key in the UI, put the new value in that agent's Secret and restart it.
+
+To reach the admin UI, give it a hostname (TLS: its login cookie is Secure-only), or port-forward:
+
+```yaml
+hindsight:
+  gateway:
+    adminIngress:
+      enabled: true
+      className: traefik
+      host: memory-keys.example.com
+      tls: {secretName: memory-keys-tls}
+```
+
+```sh
+kubectl -n hermify get secret hindsight-gateway-secrets -o jsonpath='{.data.HGW_ADMIN_PASSWORD}' | base64 -d
+```
+
+The chart creates that password unless you set `hindsight.gateway.existingSecret` to your own Secret with `HGW_ADMIN_PASSWORD`. The image is `ghcr.io/omar2535/hindsight-gateway`; set `hindsight.gateway.imagePullSecrets` if you mirror it somewhere private.
+
 ## Hindsight from outside the cluster
 
 To let an agent outside the cluster (Hermes on your laptop, say) use Hindsight, give the gateway a hostname:
@@ -50,17 +72,17 @@ hindsight:
 
 Only the gateway is exposed, never Hindsight's API, so every request still needs a `HINDSIGHT_API_KEY` and opens just that key's bank. The pods in `networkPolicies.ingressFrom` are the ones allowed to reach it. Keep the hostname on your LAN or VPN. On the outside agent, use Hindsight in `local_external` mode with this URL and a key.
 
-Give each outside agent its own key rather than reusing the cluster agent's, so you can revoke one without the other:
+Give each outside agent its own key rather than reusing the cluster agent's, so you can revoke one without the other. The simplest way is **New key** in the admin UI. If you'd rather keep the key in Git, add it as a seed:
 
 ```yaml
 hindsight:
   gateway:
     extraKeys:
-      - name: alice-laptop     # shows in the gateway log
+      - name: alice-laptop     # its name in the UI and the log
         bank: hermes-alice     # shares alice's memory
 ```
 
-With no `existingSecret`, the chart creates `hindsight-key-alice-laptop` with a random key; read it with `kubectl get secret hindsight-key-alice-laptop -o jsonpath='{.data.HINDSIGHT_API_KEY}' | base64 -d`. With `existingSecret` (and optionally `secretKey`), the key comes from your own Secret. To revoke a key, remove its entry or change the key in its Secret. Either way Hindsight restarts once, for about a minute, to pick up the change.
+With no `existingSecret`, the chart creates `hindsight-key-alice-laptop` with a random key; read it with `kubectl get secret hindsight-key-alice-laptop -o jsonpath='{.data.HINDSIGHT_API_KEY}' | base64 -d`. With `existingSecret` (and optionally `secretKey`), the key comes from your own Secret. Either way it's imported when the gateway starts. To revoke it, delete or disable it in the admin UI: that takes effect at once, without restarting anything.
 
 ## Secrets
 
@@ -74,4 +96,4 @@ If your values live in Git, create the Secrets yourself (SOPS, Sealed Secrets, E
 | `hindsight.existingSecret` | `HINDSIGHT_API_LLM_API_KEY`, `HINDSIGHT_CP_ACCESS_KEY` (the UI login) |
 | `openWebui.existingSecret` | `WEBUI_SECRET_KEY` |
 
-Open WebUI reads each agent's `API_SERVER_KEY` straight out of that person's Secret, and the Hindsight gateway reads each `HINDSIGHT_API_KEY` the same way, so you never have to copy keys around. A Secret without `HINDSIGHT_API_KEY` doesn't break anything else, but that person's agent can't use memory until you add it (the gateway logs which bank has no key).
+Open WebUI reads each agent's `API_SERVER_KEY` straight out of that person's Secret, and the Hindsight gateway imports each `HINDSIGHT_API_KEY` the same way, so you never have to copy keys around. A Secret without `HINDSIGHT_API_KEY` doesn't break anything else, but that person's agent can't use memory until you add it (and restart the gateway) or create a key for them in the admin UI.

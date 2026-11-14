@@ -1,0 +1,205 @@
+{{- if and .Values.hindsight.enabled .Values.hindsight.gateway.enabled }}
+{{- $gw := .Values.hindsight.gateway }}
+# hindsight-gateway (github.com/omar2535/hindsight-gateway): agents reach Hindsight only
+# through it, and each key opens one bank. Port api (8889) is for agents; port admin
+# (8890) is the key management UI.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hindsight-gateway-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight-gateway
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- include "hermify.storageClass" . | indent 2 }}
+  resources:
+    requests:
+      storage: {{ $gw.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hindsight-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight-gateway
+spec:
+  replicas: 1
+  # SQLite on an RWO volume: one gateway at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hindsight-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "hermify.podLabels" . | nindent 8 }}
+        app: hindsight-gateway
+    spec:
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with $gw.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $gw.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $gw.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $gw.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: "{{ $gw.image.repository }}:{{ $gw.image.tag }}"
+          imagePullPolicy: {{ $gw.image.pullPolicy }}
+          ports:
+            - name: api
+              containerPort: 8889
+            - name: admin
+              containerPort: 8890
+          env:
+            - name: HGW_UPSTREAM
+              value: http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
+            - name: HGW_DB
+              value: /data/gateway.db
+            - name: HGW_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $gw.existingSecret | default "hindsight-gateway-secrets" }}
+                  key: HGW_ADMIN_PASSWORD
+            # Seed keys: imported on start, then managed in the admin UI. optional: a Secret
+            # without the key just skips that seed (the gateway logs it).
+            {{- range $i, $t := .Values.tenants }}
+            {{- $ctx := dict "root" $ "t" $t }}
+            - name: HGW_SEED_{{ $i }}_NAME
+              value: {{ $t.name | quote }}
+            - name: HGW_SEED_{{ $i }}_BANK
+              value: {{ include "hermify.bankId" $ctx | quote }}
+            - name: HGW_SEED_{{ $i }}_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermify.secretName" $ctx }}
+                  key: HINDSIGHT_API_KEY
+                  optional: true
+            {{- end }}
+            {{- $base := len .Values.tenants }}
+            {{- range $j, $x := $gw.extraKeys }}
+            {{- $n := add $base $j }}
+            - name: HGW_SEED_{{ $n }}_NAME
+              value: {{ $x.name | quote }}
+            - name: HGW_SEED_{{ $n }}_BANK
+              value: {{ $x.bank | quote }}
+            - name: HGW_SEED_{{ $n }}_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $x.existingSecret | default (printf "hindsight-key-%s" $x.name) }}
+                  key: {{ $x.secretKey | default "HINDSIGHT_API_KEY" }}
+                  optional: true
+            {{- end }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            {{- toYaml $gw.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /health/live
+              port: api
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hindsight-gateway-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hindsight-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight-gateway
+spec:
+  selector:
+    app: hindsight-gateway
+  ports:
+    # Agents use port 8888, like Hindsight's own API.
+    - name: api
+      port: 8888
+      targetPort: api
+    - name: admin
+      port: 8890
+      targetPort: admin
+{{- range $which, $ing := dict "api" $gw.ingress "admin" $gw.adminIngress }}
+{{- if $ing.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ eq $which "api" | ternary "hindsight-gateway" "hindsight-gateway-admin" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+    app: hindsight-gateway
+  {{- with $ing.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ing.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $ing.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ $ing.host }}
+      secretName: {{ $ing.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ required (printf "hindsight.gateway.%s.host is required" (eq $which "api" | ternary "ingress" "adminIngress")) $ing.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hindsight-gateway
+                port:
+                  name: {{ $which }}
+{{- end }}
+{{- end }}
+{{- end }}

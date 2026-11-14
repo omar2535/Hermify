@@ -20,7 +20,7 @@ On every PR and push to `main`:
 
 - `helm lint`, a render of every file in `ci/` and `examples/` validated with kubeconform, and the bad-values cases in `ci/invalid/` (which must fail with the chart's own error)
 - shellcheck on the box script
-- the tests in `tests/` for the Hindsight gateway, the outbox server and the Open WebUI filter, on Python 3.11 and 3.13. They're standard library only, so you can run them anywhere:
+- the tests in `tests/` for the outbox server and the Open WebUI filter, on Python 3.11 and 3.13 (the Hindsight gateway is tested in [its own repo](https://github.com/omar2535/hindsight-gateway)). They're standard library only, so you can run them anywhere:
 
 ```sh
 python3 -m unittest discover -s tests -t tests

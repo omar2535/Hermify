@@ -19,8 +19,13 @@ storageClassName: {{ .Values.storageClassName }}
 {{- end }}
 {{- end }}
 
+{{/* Where agents reach Hindsight: through the gateway when it's on. */}}
 {{- define "hermify.hindsightUrl" -}}
+{{- if .Values.hindsight.gateway.enabled -}}
+http://hindsight-gateway.{{ .Release.Namespace }}.svc.cluster.local:8888
+{{- else -}}
 http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
+{{- end }}
 {{- end }}
 
 {{/* Per-tenant values. Call with (dict "root" $ "t" $tenant). */}}
@@ -77,6 +82,9 @@ http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
 {{- end }}
 {{- if and .ingress.enabled (not .enabled) }}
 {{- fail "hindsight.gateway.ingress needs hindsight.gateway.enabled: without the gateway it would expose Hindsight's API, which has no per-bank auth" }}
+{{- end }}
+{{- if and .adminIngress.enabled (not .enabled) }}
+{{- fail "hindsight.gateway.adminIngress needs hindsight.gateway.enabled" }}
 {{- end }}
 {{- end }}
 {{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" .Values.llm.apiKeyEnv) }}

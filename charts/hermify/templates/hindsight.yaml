@@ -1,21 +1,5 @@
 {{- if .Values.hindsight.enabled }}
 {{- $h := .Values.hindsight }}
-{{- $gw := $h.gateway }}
-{{- if $gw.enabled }}
-# The bank gateway (files/hindsight-gateway.py): each agent's key opens only its own bank.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hindsight-gateway
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "hermify.labels" . | nindent 4 }}
-    app: hindsight
-data:
-  server.py: |
-    {{- .Files.Get "files/hindsight-gateway.py" | nindent 4 }}
----
-{{- end }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -54,10 +38,6 @@ spec:
       labels:
         {{- include "hermify.podLabels" . | nindent 8 }}
         app: hindsight
-      {{- if $gw.enabled }}
-      annotations:
-        hermify/gateway-checksum: {{ .Files.Get "files/hindsight-gateway.py" | sha256sum | trunc 16 }}
-      {{- end }}
     spec:
       securityContext:
         # The image runs as UID 1000; make the volume writable for it.
@@ -114,83 +94,14 @@ spec:
             # Embedded Postgres (pg0) data for all banks.
             - name: data
               mountPath: /home/hindsight/.pg0
-        {{- if $gw.enabled }}
-        # Agents reach the API only through here (NetworkPolicy): their key picks the one
-        # bank they may use. The UI talks to the API inside this pod and isn't affected.
-        - name: gateway
-          image: "{{ $h.image.repository }}:{{ $h.image.tag }}"
-          imagePullPolicy: {{ $h.image.pullPolicy }}
-          command: ["python3", "-I", "/gateway/server.py"]
-          ports:
-            - name: gateway
-              containerPort: {{ $gw.port }}
-          env:
-            - name: GATEWAY_PORT
-              value: {{ $gw.port | quote }}
-            - name: UPSTREAM
-              value: http://127.0.0.1:8888
-            {{- range $i, $t := .Values.tenants }}
-            {{- $ctx := dict "root" $ "t" $t }}
-            - name: HERMIFY_LABEL_{{ $i }}
-              value: {{ $t.name | quote }}
-            - name: HERMIFY_BANK_{{ $i }}
-              value: {{ include "hermify.bankId" $ctx | quote }}
-            # optional: a Secret without the key only locks that person out of memory
-            # (and the gateway logs it); it doesn't stop Hindsight from starting.
-            - name: HERMIFY_KEY_{{ $i }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "hermify.secretName" $ctx }}
-                  key: HINDSIGHT_API_KEY
-                  optional: true
-            {{- end }}
-            {{- $base := len .Values.tenants }}
-            {{- range $j, $x := $gw.extraKeys }}
-            {{- $n := add $base $j }}
-            - name: HERMIFY_LABEL_{{ $n }}
-              value: {{ $x.name | quote }}
-            - name: HERMIFY_BANK_{{ $n }}
-              value: {{ $x.bank | quote }}
-            - name: HERMIFY_KEY_{{ $n }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $x.existingSecret | default (printf "hindsight-key-%s" $x.name) }}
-                  key: {{ $x.secretKey | default "HINDSIGHT_API_KEY" }}
-                  optional: true
-            {{- end }}
-          securityContext:
-            runAsUser: 1000
-            runAsGroup: 1000
-            runAsNonRoot: true
-            readOnlyRootFilesystem: true
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
-          resources:
-            {{- toYaml $gw.resources | nindent 12 }}
-          readinessProbe:
-            tcpSocket:
-              port: gateway
-            periodSeconds: 10
-          volumeMounts:
-            - name: gateway
-              mountPath: /gateway
-              readOnly: true
-        {{- end }}
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: hindsight-data
-        {{- if $gw.enabled }}
-        - name: gateway
-          configMap:
-            name: hindsight-gateway
-            defaultMode: 0444
-        {{- end }}
 ---
-# The api port (8888) is what agents use; with the gateway on it leads to the gateway, which
-# checks each agent's key. ui (9999) logs in with HINDSIGHT_CP_ACCESS_KEY and talks to the
-# API inside the pod, so only the UI ever needs an ingress.
+# api (8888, no auth of its own): with hindsight.gateway on, only the gateway may reach it
+# (NetworkPolicy). ui (9999) logs in with HINDSIGHT_CP_ACCESS_KEY and talks to the API inside
+# the pod, so only the UI ever needs an ingress.
 apiVersion: v1
 kind: Service
 metadata:
@@ -205,7 +116,7 @@ spec:
   ports:
     - name: api
       port: 8888
-      targetPort: {{ $gw.enabled | ternary "gateway" "api" }}
+      targetPort: api
     - name: ui
       port: 9999
       targetPort: ui
@@ -244,43 +155,5 @@ spec:
                 name: hindsight
                 port:
                   name: ui
-{{- end }}
-{{- if and $gw.enabled $gw.ingress.enabled }}
----
-# The bank gateway, for agents outside the cluster. The Service's api port leads to the
-# gateway (not to Hindsight's API), so each request still needs a key for one bank.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: hindsight-gateway
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "hermify.labels" . | nindent 4 }}
-    app: hindsight
-  {{- with $gw.ingress.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-spec:
-  {{- with $gw.ingress.className }}
-  ingressClassName: {{ . }}
-  {{- end }}
-  {{- if $gw.ingress.tls.secretName }}
-  tls:
-    - hosts:
-        - {{ $gw.ingress.host }}
-      secretName: {{ $gw.ingress.tls.secretName }}
-  {{- end }}
-  rules:
-    - host: {{ required "hindsight.gateway.ingress.host is required" $gw.ingress.host }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: hindsight
-                port:
-                  name: api
 {{- end }}
 {{- end }}

@@ -69,7 +69,80 @@ spec:
 {{- end }}
 {{- end }}
 {{- if .Values.hindsight.enabled }}
+{{- $gw := .Values.hindsight.gateway }}
+{{- if $gw.enabled }}
 ---
+# Hindsight's API has no per-bank auth: only the gateway may reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-hindsight
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: hindsight-gateway
+      ports:
+        - port: 8888
+---
+# Agents reach the gateway's API port, never its admin UI.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-hermes-to-hindsight-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: hermes
+      ports:
+        - port: 8889
+{{- if and (or $gw.ingress.enabled $gw.adminIngress.enabled) $np.ingressFrom }}
+---
+# The gateway's hostnames: its API (hindsight.gateway.ingress) and/or its admin UI
+# (hindsight.gateway.adminIngress), from your ingress controller only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-hindsight-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml $np.ingressFrom | nindent 8 }}
+      ports:
+        {{- if $gw.ingress.enabled }}
+        - port: 8889
+        {{- end }}
+        {{- if $gw.adminIngress.enabled }}
+        - port: 8890
+        {{- end }}
+{{- end }}
+{{- else }}
+---
+# No gateway: agents talk to Hindsight's API directly, and any agent can read any bank.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -88,33 +161,7 @@ spec:
             matchLabels:
               app: hermes
       ports:
-        {{- if .Values.hindsight.gateway.enabled }}
-        # The bank gateway only; the API itself (8888) is reachable from inside the pod only.
-        - port: {{ .Values.hindsight.gateway.port }}
-        {{- else }}
         - port: 8888
-        {{- end }}
-{{- if and .Values.hindsight.gateway.enabled .Values.hindsight.gateway.ingress.enabled $np.ingressFrom }}
----
-# The bank gateway (hindsight.gateway.ingress) for agents outside the cluster: the gateway
-# port only. Hindsight's API port stays reachable from inside its pod only.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-ingress-to-hindsight-gateway
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "hermify.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      app: hindsight
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        {{- toYaml $np.ingressFrom | nindent 8 }}
-      ports:
-        - port: {{ .Values.hindsight.gateway.port }}
 {{- end }}
 {{- if and .Values.hindsight.ingress.enabled $np.ingressFrom }}
 ---

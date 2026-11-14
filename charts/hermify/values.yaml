@@ -164,35 +164,56 @@ hindsight:
   nodeSelector: {}
   tolerations: []
   affinity: {}
-  # Private banks. Hindsight's API has no per-bank auth, so a small gateway sidecar sits in
-  # front of it: each agent sends its own HINDSIGHT_API_KEY (from its tenant Secret) and
-  # can only use its own bank. Agents can't reach the API directly. Needs
-  # HINDSIGHT_API_KEY in every tenants[].existingSecret (the chart adds it to the Secrets
-  # it creates). The Hindsight UI still sees every bank.
+  # Private banks: hindsight-gateway (github.com/omar2535/hindsight-gateway) in front of
+  # Hindsight. Hindsight's API has no per-bank auth; the gateway gives each key exactly one
+  # bank and refuses everything else, and only the gateway may reach Hindsight's API. Its
+  # admin UI manages the keys. Each agent's HINDSIGHT_API_KEY (from its tenant Secret; the
+  # chart adds it to the Secrets it creates) is imported as a seed key on start, after which
+  # the UI owns it. The Hindsight UI still sees every bank.
   gateway:
     enabled: true
-    port: 8889
+    image:
+      repository: ghcr.io/omar2535/hindsight-gateway
+      tag: "0.1.0"
+      pullPolicy: IfNotPresent
+    imagePullSecrets: []
+    # Secret with HGW_ADMIN_PASSWORD (the admin UI login). Empty: the chart creates
+    # hindsight-gateway-secrets with a random one; read it with
+    #   kubectl get secret hindsight-gateway-secrets -o jsonpath='{.data.HGW_ADMIN_PASSWORD}' | base64 -d
+    existingSecret: ""
+    # The key database (SQLite).
+    persistence:
+      size: 256Mi
     resources:
       requests:
-        cpu: 5m
-        memory: 32Mi
+        cpu: 10m
+        memory: 48Mi
       limits:
-        memory: 128Mi
-    # More keys, each opening one existing bank: for an agent outside the cluster that
-    # should share someone's memory (Hermes on their laptop, say) without reusing the
-    # cluster agent's key, so it can be revoked on its own. Changing this list restarts
-    # Hindsight (about a minute).
-    #   - name: alice-laptop        # shows in the gateway log
+        memory: 192Mi
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    # More seed keys, each opening one bank: say, for an agent outside the cluster that
+    # shares someone's memory. You can also just create keys in the admin UI.
+    #   - name: alice-laptop        # its name in the UI and the log
     #     bank: hermes-alice        # the bank it opens
     #     existingSecret: ""        # Secret with the key; empty: the chart creates
     #                               #   hindsight-key-<name> with a random one
     #     secretKey: HINDSIGHT_API_KEY
     extraKeys: []
-    # A hostname for the gateway, for agents outside the cluster (say, Hermes on your
-    # laptop). Only the gateway is exposed, never Hindsight's API itself, so every request
-    # still needs a key and opens one bank. Reached from networkPolicies.ingressFrom.
-    # Keep it on your LAN or VPN.
+    # A hostname for the gateway's API, for agents outside the cluster (say, Hermes on
+    # your laptop). Never Hindsight's API itself: every request still needs a key and
+    # opens one bank. Reached from networkPolicies.ingressFrom. Keep it on your LAN or VPN.
     ingress:
+      enabled: false
+      className: ""
+      annotations: {}
+      host: ""
+      tls:
+        secretName: ""
+    # A hostname for the admin UI (password login). Keep it on your LAN or VPN, with TLS:
+    # the session cookie is Secure-only.
+    adminIngress:
       enabled: false
       className: ""
       annotations: {}

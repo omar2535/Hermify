@@ -88,14 +88,15 @@ jobs:
       - name: shellcheck box-start.sh
         run: shellcheck --severity=error charts/hermify/files/box-start.sh
 
-  # The Hindsight gateway, the outbox server and the Open WebUI filter: what keeps banks
-  # private and files in their folder. Standard library only, no cluster.
+  # The outbox server and the Open WebUI filter: what keeps files in their folder. (The
+  # Hindsight gateway has its own repo and tests: github.com/omar2535/hindsight-gateway.)
+  # Standard library only, no cluster.
   python-tests:
     if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 3.11: the Hindsight image (gateway). 3.13: close to the Hermes image (outbox).
+        # 3.11 and 3.13: the oldest and newest Pythons the files run on.
         python: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
