@@ -54,11 +54,6 @@ hindsight:
       className: traefik
       host: memory-api.example.com
       tls: {secretName: memory-api-tls}
-    adminIngress:
-      enabled: true
-      className: traefik
-      host: memory-keys.example.com
-      tls: {secretName: memory-keys-tls}
 openWebui:
   existingSecret: open-webui-secrets
   url: https://chat.example.com

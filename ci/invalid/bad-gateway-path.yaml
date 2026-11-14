@@ -1,0 +1,4 @@
+# Must fail: the gateway's API path must look like /api.
+tenants: [{name: alice}]
+llm: {baseUrl: http://x/v1, model: m}
+hindsight: {gateway: {ingress: {enabled: true, host: memory.example.com, apiPath: "api/../x"}}}

@@ -113,10 +113,10 @@ spec:
               app: hermes
       ports:
         - port: 8889
-{{- if and (or $gw.ingress.enabled $gw.adminIngress.enabled) $np.ingressFrom }}
+{{- if and $gw.ingress.enabled $np.ingressFrom }}
 ---
-# The gateway's hostnames: its API (hindsight.gateway.ingress) and/or its admin UI
-# (hindsight.gateway.adminIngress), from your ingress controller only.
+# The gateway's hostname (hindsight.gateway.ingress): its API, and its admin UI unless
+# uiPath is empty. From your ingress controller only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -133,10 +133,8 @@ spec:
     - from:
         {{- toYaml $np.ingressFrom | nindent 8 }}
       ports:
-        {{- if $gw.ingress.enabled }}
         - port: 8889
-        {{- end }}
-        {{- if $gw.adminIngress.enabled }}
+        {{- if $gw.ingress.uiPath }}
         - port: 8890
         {{- end }}
 {{- end }}

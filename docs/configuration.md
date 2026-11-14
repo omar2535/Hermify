@@ -38,27 +38,9 @@ Those pods can reach Open WebUI, the Hindsight UI and the boxes. If something el
 
 Agents reach Hindsight through [hindsight-gateway](https://github.com/omar2535/hindsight-gateway), which gives each key one bank. Each agent's `HINDSIGHT_API_KEY` is imported from its Secret when the gateway starts; after that, its admin UI owns the keys. There you can create keys (for an agent outside the cluster, say), move a key to another bank, and disable, rotate or delete keys. A key you rotate or delete there stays that way: its Secret's old value isn't imported again. If you rotate an agent's key in the UI, put the new value in that agent's Secret and restart it.
 
-To reach the admin UI, give it a hostname (TLS: its login cookie is Secure-only), or port-forward:
+## The gateway's hostname
 
-```yaml
-hindsight:
-  gateway:
-    adminIngress:
-      enabled: true
-      className: traefik
-      host: memory-keys.example.com
-      tls: {secretName: memory-keys-tls}
-```
-
-```sh
-kubectl -n hermify get secret hindsight-gateway-secrets -o jsonpath='{.data.HGW_ADMIN_PASSWORD}' | base64 -d
-```
-
-The chart creates that password unless you set `hindsight.gateway.existingSecret` to your own Secret with `HGW_ADMIN_PASSWORD`. The image is `ghcr.io/omar2535/hindsight-gateway`; set `hindsight.gateway.imagePullSecrets` if you mirror it somewhere private.
-
-## Hindsight from outside the cluster
-
-To let an agent outside the cluster (Hermes on your laptop, say) use Hindsight, give the gateway a hostname:
+Give the gateway one hostname, and it serves both the admin UI and the API for agents outside the cluster (Hermes on your laptop, say):
 
 ```yaml
 hindsight:
@@ -66,11 +48,22 @@ hindsight:
     ingress:
       enabled: true
       className: traefik
-      host: memory-api.example.com
-      tls: {secretName: memory-api-tls}
+      host: memory.example.com
+      tls: {secretName: memory-tls}
+      # apiPath: /api   (the defaults)
+      # uiPath: /ui     ("" leaves the UI off this hostname)
 ```
 
-Only the gateway is exposed, never Hindsight's API, so every request still needs a `HINDSIGHT_API_KEY` and opens just that key's bank. The pods in `networkPolicies.ingressFrom` are the ones allowed to reach it. Keep the hostname on your LAN or VPN. On the outside agent, use Hindsight in `local_external` mode with this URL and a key.
+- **`https://memory.example.com/ui/`**: the admin UI. Its password:
+  ```sh
+  kubectl -n hermify get secret hindsight-gateway-secrets -o jsonpath='{.data.HGW_ADMIN_PASSWORD}' | base64 -d
+  ```
+  The chart creates it unless you set `hindsight.gateway.existingSecret` to your own Secret with `HGW_ADMIN_PASSWORD`. Without a hostname, `kubectl -n hermify port-forward svc/hindsight-gateway 8890` and open `http://localhost:8890/ui/`.
+- **`https://memory.example.com/api`**: the API. On the outside agent, use Hindsight in `local_external` mode with this URL and a key.
+
+Only the gateway is exposed, never Hindsight's API, so every request still needs a key and opens just that key's bank. The pods in `networkPolicies.ingressFrom` are the ones allowed to reach it. Keep the hostname on your LAN or VPN, with TLS (the UI's login cookie is Secure-only).
+
+The image is `ghcr.io/omar2535/hindsight-gateway`; set `hindsight.gateway.imagePullSecrets` if you mirror it somewhere private.
 
 Give each outside agent its own key rather than reusing the cluster agent's, so you can revoke one without the other. The simplest way is **New key** in the admin UI. If you'd rather keep the key in Git, add it as a seed:
 

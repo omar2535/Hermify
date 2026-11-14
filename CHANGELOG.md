@@ -9,7 +9,8 @@ Each release's section here is also its GitHub Release notes. Upgrade steps are 
 The Hindsight gateway is its own project now, [hindsight-gateway](https://github.com/omar2535/hindsight-gateway), with an admin UI for the keys.
 
 - The gateway runs as its own Deployment (`hindsight-gateway`, image `ghcr.io/omar2535/hindsight-gateway`) with a small volume for its key database, instead of a sidecar in the Hindsight pod. Only the gateway may reach Hindsight's API.
-- Its admin UI manages the keys: create, rename, move to another bank, disable, rotate, delete, and see when each was last used. `hindsight.gateway.adminIngress` gives it a hostname; the password is in `hindsight-gateway-secrets` (or your `hindsight.gateway.existingSecret`).
+- Its admin UI manages the keys: create, rename, move to another bank, disable, rotate, delete, and see when each was last used. The password is in `hindsight-gateway-secrets` (or your `hindsight.gateway.existingSecret`).
+- `hindsight.gateway.ingress` is now one hostname for both: the API under `/api` and the admin UI under `/ui` (`apiPath`, `uiPath`).
 - Each agent's `HINDSIGHT_API_KEY`, and `hindsight.gateway.extraKeys`, are imported as seed keys when the gateway starts. Changing keys no longer restarts Hindsight.
 - Agents reach Hindsight at `hindsight-gateway:8888` instead of `hindsight:8888`.
 - Removed: `hindsight.gateway.port` and `hindsight.gateway.resources` from the old sidecar (`hindsight.gateway.resources` now sizes the gateway pod).
@@ -17,6 +18,7 @@ The Hindsight gateway is its own project now, [hindsight-gateway](https://github
 ### Upgrading
 
 - Nothing to migrate: the agents' existing keys (and `extraKeys`) are imported on the gateway's first start, so every key keeps working.
+- If you used `hindsight.gateway.ingress` (0.4.0+), agents outside the cluster now use `https://<host>/api` instead of `https://<host>`.
 - Hindsight restarts once (the sidecar goes away), every agent restarts once (new Hindsight URL), and the gateway starts in its own pod. Memory is unavailable for about a minute.
 - The gateway image must be pullable from your cluster: it's public on ghcr.io, or set `hindsight.gateway.imagePullSecrets` for a private mirror.
 

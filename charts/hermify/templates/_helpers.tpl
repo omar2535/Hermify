@@ -83,8 +83,14 @@ http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
 {{- if and .ingress.enabled (not .enabled) }}
 {{- fail "hindsight.gateway.ingress needs hindsight.gateway.enabled: without the gateway it would expose Hindsight's API, which has no per-bank auth" }}
 {{- end }}
-{{- if and .adminIngress.enabled (not .enabled) }}
-{{- fail "hindsight.gateway.adminIngress needs hindsight.gateway.enabled" }}
+{{- if not (regexMatch "^/[a-z0-9][a-z0-9_-]*$" (toString .ingress.apiPath)) }}
+{{- fail (printf "hindsight.gateway.ingress.apiPath: %q must look like /api" (toString .ingress.apiPath)) }}
+{{- end }}
+{{- if and .ingress.uiPath (not (regexMatch "^/[a-z0-9][a-z0-9_-]*$" (toString .ingress.uiPath))) }}
+{{- fail (printf "hindsight.gateway.ingress.uiPath: %q must look like /ui, or be empty" (toString .ingress.uiPath)) }}
+{{- end }}
+{{- if and .ingress.uiPath (eq (toString .ingress.uiPath) (toString .ingress.apiPath)) }}
+{{- fail "hindsight.gateway.ingress: apiPath and uiPath must differ" }}
 {{- end }}
 {{- end }}
 {{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" .Values.llm.apiKeyEnv) }}

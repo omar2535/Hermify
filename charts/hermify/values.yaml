@@ -174,7 +174,7 @@ hindsight:
     enabled: true
     image:
       repository: ghcr.io/omar2535/hindsight-gateway
-      tag: "0.1.0"
+      tag: "0.2.0"
       pullPolicy: IfNotPresent
     imagePullSecrets: []
     # Secret with HGW_ADMIN_PASSWORD (the admin UI login). Empty: the chart creates
@@ -201,9 +201,11 @@ hindsight:
     #                               #   hindsight-key-<name> with a random one
     #     secretKey: HINDSIGHT_API_KEY
     extraKeys: []
-    # A hostname for the gateway's API, for agents outside the cluster (say, Hermes on
-    # your laptop). Never Hindsight's API itself: every request still needs a key and
-    # opens one bank. Reached from networkPolicies.ingressFrom. Keep it on your LAN or VPN.
+    # One hostname for the gateway: its API under apiPath, for agents outside the cluster
+    # (say, Hermes on your laptop: https://<host>/api), and the key admin UI under uiPath
+    # (https://<host>/ui/, password login). Never Hindsight's API itself: every request
+    # still needs a key and opens one bank. Reached from networkPolicies.ingressFrom. Keep it
+    # on your LAN or VPN, with TLS (the UI's session cookie is Secure-only).
     ingress:
       enabled: false
       className: ""
@@ -211,15 +213,9 @@ hindsight:
       host: ""
       tls:
         secretName: ""
-    # A hostname for the admin UI (password login). Keep it on your LAN or VPN, with TLS:
-    # the session cookie is Secure-only.
-    adminIngress:
-      enabled: false
-      className: ""
-      annotations: {}
-      host: ""
-      tls:
-        secretName: ""
+      apiPath: /api
+      # "" leaves the admin UI off this hostname (port-forward to it instead).
+      uiPath: /ui
   # Control-plane UI (port 9999, logs in with HINDSIGHT_CP_ACCESS_KEY). The API stays
   # internal.
   ingress:

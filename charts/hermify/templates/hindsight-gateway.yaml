@@ -80,6 +80,11 @@ spec:
               value: http://hindsight.{{ .Release.Namespace }}.svc.cluster.local:8888
             - name: HGW_DB
               value: /data/gateway.db
+            # Paths on the shared hostname. Bare paths keep working inside the cluster.
+            - name: HGW_API_PREFIX
+              value: {{ $gw.ingress.apiPath | quote }}
+            - name: HGW_ADMIN_PREFIX
+              value: {{ $gw.ingress.uiPath | default "/ui" | quote }}
             - name: HGW_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -164,42 +169,53 @@ spec:
     - name: admin
       port: 8890
       targetPort: admin
-{{- range $which, $ing := dict "api" $gw.ingress "admin" $gw.adminIngress }}
-{{- if $ing.enabled }}
+{{- with $gw.ingress }}
+{{- if .enabled }}
 ---
+# One hostname: <apiPath> -> the API (8889), <uiPath> -> the admin UI (8890). The gateway
+# knows both prefixes, so nothing needs rewriting.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ eq $which "api" | ternary "hindsight-gateway" "hindsight-gateway-admin" }}
+  name: hindsight-gateway
   namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "hermify.labels" $ | nindent 4 }}
     app: hindsight-gateway
-  {{- with $ing.annotations }}
+  {{- with .annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- with $ing.className }}
+  {{- with .className }}
   ingressClassName: {{ . }}
   {{- end }}
-  {{- if $ing.tls.secretName }}
+  {{- if .tls.secretName }}
   tls:
     - hosts:
-        - {{ $ing.host }}
-      secretName: {{ $ing.tls.secretName }}
+        - {{ .host }}
+      secretName: {{ .tls.secretName }}
   {{- end }}
   rules:
-    - host: {{ required (printf "hindsight.gateway.%s.host is required" (eq $which "api" | ternary "ingress" "adminIngress")) $ing.host }}
+    - host: {{ required "hindsight.gateway.ingress.host is required" .host }}
       http:
         paths:
-          - path: /
+          - path: {{ .apiPath }}
             pathType: Prefix
             backend:
               service:
                 name: hindsight-gateway
                 port:
-                  name: {{ $which }}
+                  name: api
+          {{- if .uiPath }}
+          - path: {{ .uiPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: hindsight-gateway
+                port:
+                  name: admin
+          {{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
