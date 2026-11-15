@@ -12,7 +12,14 @@ That's up to you:
 
 - a `LoadBalancer` Service (`box.service.type`), one IP per box on port 22
 - a `NodePort`
-- Tailscale or a tunnel in front
+- Tailscale
+- a tunnel. With Cloudflare: a published-application route of type `SSH` for
+  `ssh://<box-service>.<namespace>.svc.cluster.local:22` on a public hostname, in front of an
+  Access application, and the connector's pods in `networkPolicies.boxExtraFrom`. The
+  browser-rendered terminal logs in with a password, and boxes are key-only, so use
+  [client-side `cloudflared access ssh`](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/use-cases/ssh/ssh-cloudflared-authentication/)
+  instead. Cloudflare drops a connection idle for ~100s: set `ServerAliveInterval 60` in the
+  client's `~/.ssh/config`.
 - a Traefik entrypoint per box. Raw TCP can't be routed by hostname, so each box needs its own port. Add the entrypoint to Traefik's config, set `traefikEntryPoint`, and the chart creates the `IngressRouteTCP`.
 
 Boxes come with passwordless `sudo`; see [Security](security.md) for what that does and doesn't give someone.

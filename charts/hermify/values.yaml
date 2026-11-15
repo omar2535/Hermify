@@ -283,6 +283,10 @@ networkPolicies:
           app.kubernetes.io/name: traefik
   # More peers for Open WebUI only (e.g. a cloudflared tunnel).
   openWebuiExtraFrom: []
+  # More peers for the SSH boxes only (e.g. a cloudflared tunnel → ssh://<box-svc>:22).
+  # Ignored when any box has a LoadBalancer/NodePort Service: those already take :22 from
+  # anywhere.
+  boxExtraFrom: []
   # Egress from the agent pods (their boxes too: a box shares its pod's network). Off,
   # an agent reaches anything its pod can: your LAN, the Kubernetes API, the kubelet and
   # in-cluster admin UIs, which a prompt-injected agent could abuse. On, agents reach only

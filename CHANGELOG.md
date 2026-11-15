@@ -2,6 +2,10 @@
 
 Each release's section here is also its GitHub Release notes. Upgrade steps are under **Upgrading** when a release needs any.
 
+## [0.8.0] - 2026-11-15
+
+- `networkPolicies.boxExtraFrom`: extra peers allowed to reach the SSH boxes on port 22, next to `ingressFrom`. For a tunnel connector in another namespace (a Cloudflare Tunnel, say), which reaches `ssh://<box-service>.<namespace>.svc.cluster.local:22` directly instead of through the ingress controller's per-box ports. Off by default, so the boxes stay reachable only from `ingressFrom`.
+
 ## [Unreleased]
 
 ## [0.7.0] - 2026-11-15
@@ -82,7 +86,8 @@ Agents can send files into Open WebUI chats.
 
 First release: one Hermes Agent per person, shared Hindsight memory with a bank each, Open WebUI with every agent as a model, optional SSH boxes, and NetworkPolicies.
 
-[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/omar2535/Hermify/releases/tag/v0.8.0
 [0.7.0]: https://github.com/omar2535/Hermify/releases/tag/v0.7.0
 [0.6.0]: https://github.com/omar2535/Hermify/releases/tag/v0.6.0
 [0.5.0]: https://github.com/omar2535/Hermify/releases/tag/v0.5.0

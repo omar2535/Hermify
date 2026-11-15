@@ -33,7 +33,7 @@ networkPolicies:
           app.kubernetes.io/name: ingress-nginx
 ```
 
-Those pods can reach Open WebUI, the Hindsight UI and the boxes. If something else needs to reach Open WebUI (a Cloudflare tunnel, say), add it to `networkPolicies.openWebuiExtraFrom`.
+Those pods can reach Open WebUI, the Hindsight UI and the boxes. If something else needs to reach Open WebUI (a Cloudflare tunnel, say), add it to `networkPolicies.openWebuiExtraFrom`. The same for the SSH boxes, on port 22: `networkPolicies.boxExtraFrom`.
 
 ## Limiting what agents can reach
 

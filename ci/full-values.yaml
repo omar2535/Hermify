@@ -72,6 +72,11 @@ networkPolicies:
   openWebuiExtraFrom:
     - namespaceSelector:
         matchLabels: {kubernetes.io/metadata.name: cloudflare-tunnel}
+  boxExtraFrom:
+    - namespaceSelector:
+        matchLabels: {kubernetes.io/metadata.name: cloudflare-tunnel}
+      podSelector:
+        matchLabels: {app: cloudflared}
   egress:
     enabled: true
     extraRules:

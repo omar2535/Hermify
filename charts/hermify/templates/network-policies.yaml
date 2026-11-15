@@ -185,8 +185,9 @@ spec:
 {{- end }}
 {{- if $anyBox }}
 ---
-# SSH into the boxes: from the ingress controller, or from anywhere when a box has its own
-# LoadBalancer or NodePort Service.
+# SSH into the boxes: from the ingress controller plus networkPolicies.boxExtraFrom (a
+# cloudflared tunnel), or from anywhere when a box has its own LoadBalancer or NodePort
+# Service.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -203,9 +204,11 @@ spec:
   ingress:
     - ports:
         - port: 22
-      {{- if and (not $openBox) $np.ingressFrom }}
+      {{- if not $openBox }}
+      {{- with (concat ($np.ingressFrom | default list) ($np.boxExtraFrom | default list)) }}
       from:
-        {{- toYaml $np.ingressFrom | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
 {{- end }}
 {{- $eg := $np.egress }}
