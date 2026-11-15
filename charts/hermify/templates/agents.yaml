@@ -115,11 +115,15 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      # Agents never talk to the Kubernetes API: no service account token in the pod.
+      automountServiceAccountToken: false
       # The image starts as root (s6-overlay fixes /opt/data ownership), then drops to
       # the hermes user, UID 10000.
       securityContext:
         fsGroup: 10000
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       {{- with $.Values.agent.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

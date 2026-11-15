@@ -19,6 +19,7 @@ tenants: []
 #   persistence:
 #     size: ""           # default: agent.persistence.size
 #   env: []              # extra env vars, for both the agent and the box
+#   egress: []           # more egress rules for this agent only (networkPolicies.egress)
 #   box:
 #     enabled: false     # SSH box: a sidecar with sshd and the hermes CLI
 #     authorizedKeys: |  # public keys allowed to log in, one per line
@@ -282,3 +283,35 @@ networkPolicies:
           app.kubernetes.io/name: traefik
   # More peers for Open WebUI only (e.g. a cloudflared tunnel).
   openWebuiExtraFrom: []
+  # Egress from the agent pods (their boxes too: a box shares its pod's network). Off,
+  # an agent reaches anything its pod can: your LAN, the Kubernetes API, the kubelet and
+  # in-cluster admin UIs, which a prompt-injected agent could abuse. On, agents reach only
+  # cluster DNS, the Hindsight gateway, the internet (outside `privateRanges`), and the
+  # rules in `extraRules` and in each tenant's `egress`.
+  egress:
+    enabled: false
+    # Your cluster DNS. Default: CoreDNS (k8s-app: kube-dns) in kube-system.
+    dns:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+    # Any IPv4 address outside `privateRanges`: web tools, pip/apt, the box's mirrors.
+    internet: true
+    privateRanges:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 100.64.0.0/10   # CGNAT, e.g. Tailscale
+      - 169.254.0.0/16  # link-local, cloud metadata
+    # More egress rules (NetworkPolicy `egress` entries) for every agent. Your LLM endpoint
+    # goes here if it's in the cluster or on a private network, e.g. LiteLLM:
+    #   - to:
+    #       - namespaceSelector:
+    #           matchLabels:
+    #             kubernetes.io/metadata.name: litellm
+    #     ports:
+    #       - port: 4000
+    extraRules: []

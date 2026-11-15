@@ -4,6 +4,11 @@ Each release's section here is also its GitHub Release notes. Upgrade steps are 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-15
+
+- `networkPolicies.egress`: limit what agents and their boxes can reach to cluster DNS, the Hindsight gateway and the public internet (everything outside `privateRanges`), plus `extraRules` for every agent and `tenants[].egress` for one. Without it, an agent reaches your LAN, the Kubernetes API, the kubelet and other namespaces' admin UIs. Off by default.
+- Agent pods no longer mount a service account token, and run under the runtime's default seccomp profile.
+
 ## [0.6.0] - 2026-11-13
 
 The Hindsight gateway is its own project now, [hindsight-gateway](https://github.com/omar2535/hindsight-gateway), with an admin UI for the keys.
@@ -77,7 +82,8 @@ Agents can send files into Open WebUI chats.
 
 First release: one Hermes Agent per person, shared Hindsight memory with a bank each, Open WebUI with every agent as a model, optional SSH boxes, and NetworkPolicies.
 
-[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/omar2535/Hermify/releases/tag/v0.7.0
 [0.6.0]: https://github.com/omar2535/Hermify/releases/tag/v0.6.0
 [0.5.0]: https://github.com/omar2535/Hermify/releases/tag/v0.5.0
 [0.4.0]: https://github.com/omar2535/Hermify/releases/tag/v0.4.0

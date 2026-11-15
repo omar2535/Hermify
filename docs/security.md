@@ -2,7 +2,9 @@
 
 Hermify is for people who trust each other, on a cluster you run. Some things to be aware of.
 
-NetworkPolicies deny all ingress to the namespace, then allow: your ingress controller to Open WebUI, the Hindsight UI and the boxes; Open WebUI to the agents (API and outbox); the agents to the Hindsight gateway's API port; and the gateway to Hindsight's API. Everything else is kept out. Egress stays open, since agents need the LLM endpoint and the internet.
+NetworkPolicies deny all ingress to the namespace, then allow: your ingress controller to Open WebUI, the Hindsight UI and the boxes; Open WebUI to the agents (API and outbox); the agents to the Hindsight gateway's API port; and the gateway to Hindsight's API. Everything else is kept out.
+
+Egress is open by default: an agent can reach anything its pod can, including your LAN, the Kubernetes API, the kubelet and admin UIs in other namespaces (Longhorn's has no login, for one). Turn on `networkPolicies.egress` to limit agents and their boxes to cluster DNS, the Hindsight gateway and the public internet, plus the rules you add, such as your LLM endpoint ([how](configuration.md#limiting-what-agents-can-reach)). Agent pods also get no service account token and run under the runtime's default seccomp profile.
 
 Agents have a shell. Tools, including the terminal, run inside the agent's own pod with internet access (`terminal.backend: local`), so anyone who can chat with an agent can get it to run commands. The pod is the boundary: other people's agents and files are out of reach, but that agent's own files, keys and memory aren't.
 

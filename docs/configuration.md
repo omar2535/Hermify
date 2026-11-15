@@ -16,6 +16,7 @@ Every option is documented in [`values.yaml`](../charts/hermify/values.yaml), an
 | `hindsight.*`, `openWebui.*` | Image, resources, persistence, ingress, and `enabled` if you don't want one. |
 | `hindsight.gateway` | Keeps each person's memory bank private (see [Security](security.md)). On by default. |
 | `networkPolicies.ingressFrom` | Your ingress controller's pods (below). |
+| `networkPolicies.egress` | What agents may reach. Off by default (below). |
 
 ## Ingress controllers other than k3s's Traefik
 
@@ -33,6 +34,38 @@ networkPolicies:
 ```
 
 Those pods can reach Open WebUI, the Hindsight UI and the boxes. If something else needs to reach Open WebUI (a Cloudflare tunnel, say), add it to `networkPolicies.openWebuiExtraFrom`.
+
+## Limiting what agents can reach
+
+By default an agent can reach anything its pod can: your LAN, the Kubernetes API, the kubelet and every Service in the cluster. With `networkPolicies.egress.enabled`, agents and their boxes reach only cluster DNS, the Hindsight gateway and the public internet (any IPv4 address outside `privateRanges`). Everything else needs a rule. Your LLM endpoint is the one you'll almost always need, if it's in the cluster or on your LAN:
+
+```yaml
+networkPolicies:
+  egress:
+    enabled: true
+    extraRules:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: litellm
+        ports:
+          - port: 4000
+tenants:
+  - name: alice
+    # Only alice's agent: a Git server on the LAN.
+    egress:
+      - to:
+          - ipBlock:
+              cidr: 192.168.1.10/32
+        ports:
+          - port: 443
+```
+
+Rules are ordinary NetworkPolicy `egress` entries. Use the Pod's port, not the Service's (LiteLLM's Service may listen on 80 but the Pod on 4000). DNS defaults to k3s's CoreDNS (`k8s-app: kube-dns` in `kube-system`); change `egress.dns` if yours differs. After turning it on, check from an agent that the LLM, Hindsight and a public site still answer:
+
+```sh
+kubectl -n <ns> exec deploy/hermes-alice -c hermes -- curl -sS -o /dev/null -w '%{http_code}\n' <llm.baseUrl>/models
+```
 
 ## Memory keys
 

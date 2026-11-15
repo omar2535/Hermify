@@ -11,6 +11,11 @@ tenants:
     env:
       - name: ANTHROPIC_API_KEY
         value: ""
+    egress:
+      - to:
+          - ipBlock: {cidr: 192.168.1.10/32}
+        ports:
+          - port: 443
     box:
       enabled: true
       authorizedKeys: |
@@ -67,3 +72,11 @@ networkPolicies:
   openWebuiExtraFrom:
     - namespaceSelector:
         matchLabels: {kubernetes.io/metadata.name: cloudflare-tunnel}
+  egress:
+    enabled: true
+    extraRules:
+      - to:
+          - namespaceSelector:
+              matchLabels: {kubernetes.io/metadata.name: llm}
+        ports:
+          - port: 4000

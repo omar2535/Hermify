@@ -11,7 +11,7 @@
 {{- end }}
 # Ingress lockdown for the namespace. Hindsight's API has no auth and banks only separate
 # memory by convention, so only agents may reach it; agents can't reach each other.
-# Egress stays open: agents need the LLM endpoint and the internet for their tools.
+# Egress is open unless networkPolicies.egress.enabled (agent pods only, at the end).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -207,5 +207,81 @@ spec:
       from:
         {{- toYaml $np.ingressFrom | nindent 8 }}
       {{- end }}
+{{- end }}
+{{- $eg := $np.egress }}
+{{- if and $eg.enabled .Values.tenants }}
+---
+# Agents and their boxes: cluster DNS, Hindsight (through the gateway when it's on), the
+# internet outside privateRanges, and egress.extraRules. Nothing else: no LAN, no
+# Kubernetes API or kubelet, no other namespaces, no other agents.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hermes-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hermes
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- toYaml $eg.dns | nindent 8 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- if and .Values.hindsight.enabled .Values.hindsight.gateway.enabled }}
+    # The gateway's API port, never its admin UI.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: hindsight-gateway
+      ports:
+        - port: 8889
+    {{- else if .Values.hindsight.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: hindsight
+      ports:
+        - port: 8888
+    {{- end }}
+    {{- if $eg.internet }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            {{- with $eg.privateRanges }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+    {{- end }}
+    {{- with $eg.extraRules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- range $t := .Values.tenants }}
+{{- with $t.egress }}
+---
+# {{ $t.name }} only (tenants[].egress), on top of hermes-egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hermes-egress-{{ $t.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hermes
+      tenant: {{ $t.name }}
+  policyTypes: [Egress]
+  egress:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
