@@ -2,11 +2,13 @@
 
 Each release's section here is also its GitHub Release notes. Upgrade steps are under **Upgrading** when a release needs any.
 
+## [Unreleased]
+
+- A new Open WebUI filter, [`openwebui/hermify_tool_progress.py`](openwebui/hermify_tool_progress.py), shows each tool an agent runs as a status line above its reply, like Telegram's tool progress. Open WebUI otherwise shows nothing until the reply's first words. Install it like the files filter ([how](docs/tool-progress-in-open-webui.md)).
+
 ## [0.8.0] - 2026-11-15
 
 - `networkPolicies.boxExtraFrom`: extra peers allowed to reach the SSH boxes on port 22, next to `ingressFrom`. For a tunnel connector in another namespace (a Cloudflare Tunnel, say), which reaches `ssh://<box-service>.<namespace>.svc.cluster.local:22` directly instead of through the ingress controller's per-box ports. Off by default, so the boxes stay reachable only from `ingressFrom`.
-
-## [Unreleased]
 
 ## [0.7.0] - 2026-11-15
 

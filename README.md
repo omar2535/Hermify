@@ -30,7 +30,7 @@ Then:
 
 1. Create the first Open WebUI account (it becomes the admin), add everyone, and make each `hermes-<name>` model visible to its owner only.
 2. Set Admin Panel → Settings → Interface → Task Model to a plain LLM, not an agent.
-3. Install the [files filter](docs/files-in-open-webui.md) so agents can send back spreadsheets, PDFs and so on.
+3. Install the [files filter](docs/files-in-open-webui.md) so agents can send back spreadsheets, PDFs and so on, and the [tool progress filter](docs/tool-progress-in-open-webui.md) so people see what an agent is doing while it works.
 4. Run `hermes setup` for each agent (from their box, or `kubectl -n hermify exec -it deploy/hermes-<name> -c hermes -- hermes setup`) and restart it.
 
 ## Docs
@@ -38,6 +38,7 @@ Then:
 - [Configuration](docs/configuration.md): values, secrets, ingress
 - [SSH boxes](docs/ssh-boxes.md)
 - [Files in Open WebUI](docs/files-in-open-webui.md)
+- [Tool progress in Open WebUI](docs/tool-progress-in-open-webui.md)
 - [Operations](docs/operations.md): gotchas, Hindsight tuning, adopting an existing install
 - [Security](docs/security.md)
 - [Development and releases](docs/development.md)
