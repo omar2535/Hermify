@@ -175,7 +175,7 @@ hindsight:
     enabled: true
     image:
       repository: ghcr.io/omar2535/hindsight-gateway
-      tag: "0.3.0"
+      tag: "0.3.1"
       pullPolicy: IfNotPresent
     imagePullSecrets: []
     # Secret with HGW_ADMIN_PASSWORD (the admin UI login). Empty: the chart creates

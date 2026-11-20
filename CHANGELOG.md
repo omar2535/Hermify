@@ -4,6 +4,8 @@ Each release's section here is also its GitHub Release notes. Upgrade steps are 
 
 ## [Unreleased]
 
+- hindsight-gateway 0.3.1: `/version` needs no key, so the per-person UI's sign-in page no longer shows a "Server Error".
+
 ## [0.9.0] - 2026-11-20
 
 - `hindsight.userUi`: Hindsight's UI for each person, at its own hostname. Everyone signs in with their own gateway key and sees only their bank, with every tab: Home with its graph, Memories, Recall, Reflect, Documents, Entities. It's Hindsight's UI with a small patch (`ghcr.io/omar2535/hindsight-ui`, tagged with the Hindsight version it's built from), and every call it makes goes through the gateway with that person's key; its pod reaches only DNS and the gateway. Off by default; needs the gateway ([how](docs/configuration.md#a-hindsight-ui-for-each-person)).
