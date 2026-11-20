@@ -138,6 +138,79 @@ spec:
         - port: 8890
         {{- end }}
 {{- end }}
+{{- with .Values.hindsight.userUi }}
+{{- if .enabled }}
+---
+# The per-person Hindsight UI reaches the gateway's API port, like an agent.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-hindsight-user-ui-to-gateway
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight-gateway
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: hindsight-user-ui
+      ports:
+        - port: 8889
+---
+# And nothing else: cluster DNS and the gateway. Never Hindsight's API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hindsight-user-ui-egress
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight-user-ui
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- toYaml $np.egress.dns | nindent 8 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: hindsight-gateway
+      ports:
+        - port: 8889
+{{- if and .ingress.enabled $np.ingressFrom }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-hindsight-user-ui
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: hindsight-user-ui
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml $np.ingressFrom | nindent 8 }}
+      ports:
+        - port: 9999
+{{- end }}
+{{- end }}
+{{- end }}
 {{- else }}
 ---
 # No gateway: agents talk to Hindsight's API directly, and any agent can read any bank.

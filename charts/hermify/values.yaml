@@ -175,7 +175,7 @@ hindsight:
     enabled: true
     image:
       repository: ghcr.io/omar2535/hindsight-gateway
-      tag: "0.2.0"
+      tag: "0.3.0"
       pullPolicy: IfNotPresent
     imagePullSecrets: []
     # Secret with HGW_ADMIN_PASSWORD (the admin UI login). Empty: the chart creates
@@ -217,8 +217,45 @@ hindsight:
       apiPath: /api
       # "" leaves the admin UI off this hostname (port-forward to it instead).
       uiPath: /ui
-  # Control-plane UI (port 9999, logs in with HINDSIGHT_CP_ACCESS_KEY). The API stays
-  # internal.
+  # Hindsight's UI for each person: the same Home, Memories, Recall, Reflect... tabs, but
+  # signed in with their own gateway key, so they see only that key's bank. Hindsight's UI
+  # with a small patch (sign in with a dataplane key) from
+  # github.com/omar2535/hindsight-gateway, tagged with the Hindsight version it's built from;
+  # keep it on hindsight.image.tag's version. All its calls go through the gateway, never to
+  # Hindsight directly. Give each person a key for their bank in the gateway's admin UI
+  # (their own, separate from their agent's, so either can be revoked alone). Needs
+  # hindsight.gateway.
+  userUi:
+    enabled: false
+    image:
+      repository: ghcr.io/omar2535/hindsight-ui
+      tag: "1.2.1"
+      # A patch fix rebuilds the same tag: Always picks it up on the next restart.
+      pullPolicy: Always
+    imagePullSecrets: []
+    # Secret with HINDSIGHT_CP_ACCESS_KEY: not a login here, it seals the session cookies
+    # (changing it signs everyone out). Empty: the chart creates hindsight-user-ui-secrets
+    # with a random one.
+    existingSecret: ""
+    resources:
+      requests:
+        cpu: 20m
+        memory: 192Mi
+      limits:
+        memory: 512Mi
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    # Reached from networkPolicies.ingressFrom. Keep it on your LAN or VPN, with TLS.
+    ingress:
+      enabled: false
+      className: ""
+      annotations: {}
+      host: ""
+      tls:
+        secretName: ""
+  # Control-plane UI (port 9999, logs in with HINDSIGHT_CP_ACCESS_KEY): the admin's view,
+  # every bank. The API stays internal.
   ingress:
     enabled: false
     className: ""

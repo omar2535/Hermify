@@ -1,0 +1,151 @@
+{{- if and .Values.hindsight.enabled .Values.hindsight.userUi.enabled }}
+{{- if not .Values.hindsight.gateway.enabled }}
+{{- fail "hindsight.userUi needs hindsight.gateway: the gateway is what limits each person to their own bank" }}
+{{- end }}
+{{- $u := .Values.hindsight.userUi }}
+# Hindsight's UI for each person (hindsight.userUi): everyone signs in with their own gateway
+# key, and every call it makes goes to the gateway with that key, so it shows one bank.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hindsight-user-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight-user-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hindsight-user-ui
+  template:
+    metadata:
+      labels:
+        {{- include "hermify.podLabels" . | nindent 8 }}
+        app: hindsight-user-ui
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # The node user of the node:alpine base image.
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with $u.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $u.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $u.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $u.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ui
+          image: "{{ $u.image.repository }}:{{ $u.image.tag }}"
+          imagePullPolicy: {{ $u.image.pullPolicy }}
+          ports:
+            - name: ui
+              containerPort: 9999
+          env:
+            # The image's start script checks that $HOME/.pg0 is writable even with the API
+            # off; the root filesystem is read-only, /tmp isn't.
+            - name: HOME
+              value: /tmp
+            - name: HINDSIGHT_CP_AUTH_MODE
+              value: api-key
+            # The gateway's API (its Service maps 8888 to the API port), never Hindsight.
+            - name: HINDSIGHT_CP_DATAPLANE_API_URL
+              value: http://hindsight-gateway.{{ .Release.Namespace }}.svc.cluster.local:8888
+            - name: HINDSIGHT_CP_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $u.existingSecret | default "hindsight-user-ui-secrets" }}
+                  key: HINDSIGHT_CP_ACCESS_KEY
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            {{- toYaml $u.resources | nindent 12 }}
+          # /api/* needs a session, and /api/version a key: a TCP check is what's left.
+          readinessProbe:
+            tcpSocket:
+              port: ui
+            periodSeconds: 10
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/control-plane/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: next-cache
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hindsight-user-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" . | nindent 4 }}
+    app: hindsight-user-ui
+spec:
+  selector:
+    app: hindsight-user-ui
+  ports:
+    - name: ui
+      port: 9999
+      targetPort: ui
+{{- with $u.ingress }}
+{{- if .enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hindsight-user-ui
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hermify.labels" $ | nindent 4 }}
+    app: hindsight-user-ui
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .tls.secretName }}
+  tls:
+    - hosts:
+        - {{ .host }}
+      secretName: {{ .tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ required "hindsight.userUi.ingress.host is required" .host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hindsight-user-ui
+                port:
+                  name: ui
+{{- end }}
+{{- end }}
+{{- end }}

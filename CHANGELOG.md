@@ -4,6 +4,10 @@ Each release's section here is also its GitHub Release notes. Upgrade steps are 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-20
+
+- `hindsight.userUi`: Hindsight's UI for each person, at its own hostname. Everyone signs in with their own gateway key and sees only their bank, with every tab: Home with its graph, Memories, Recall, Reflect, Documents, Entities. It's Hindsight's UI with a small patch (`ghcr.io/omar2535/hindsight-ui`, tagged with the Hindsight version it's built from), and every call it makes goes through the gateway with that person's key; its pod reaches only DNS and the gateway. Off by default; needs the gateway ([how](docs/configuration.md#a-hindsight-ui-for-each-person)).
+- hindsight-gateway 0.3.0: the bank list, chunk lookups and export downloads now answer for the key's own bank (the per-person UI needs them), and deleting a whole bank is refused for every key.
 - A new Open WebUI filter, [`openwebui/hermify_tool_progress.py`](openwebui/hermify_tool_progress.py), shows each tool an agent runs as a status line above its reply, like Telegram's tool progress. Open WebUI otherwise shows nothing until the reply's first words. Install it like the files filter ([how](docs/tool-progress-in-open-webui.md)).
 
 ## [0.8.0] - 2026-11-15
@@ -88,7 +92,8 @@ Agents can send files into Open WebUI chats.
 
 First release: one Hermes Agent per person, shared Hindsight memory with a bank each, Open WebUI with every agent as a model, optional SSH boxes, and NetworkPolicies.
 
-[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/omar2535/Hermify/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/omar2535/Hermify/releases/tag/v0.9.0
 [0.8.0]: https://github.com/omar2535/Hermify/releases/tag/v0.8.0
 [0.7.0]: https://github.com/omar2535/Hermify/releases/tag/v0.7.0
 [0.6.0]: https://github.com/omar2535/Hermify/releases/tag/v0.6.0

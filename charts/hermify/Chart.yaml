@@ -4,7 +4,7 @@ description: >-
   Hermes Agent for a household on Kubernetes: an agent per person, shared Hindsight
   memory, Open WebUI, and optional SSH boxes.
 type: application
-version: 0.8.0
+version: 0.9.0
 # Hermes Agent image tag the chart is tested with (agent.image.tag).
 appVersion: "v0.23.1"
 home: https://github.com/omar2535/Hermify

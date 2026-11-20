@@ -110,6 +110,25 @@ hindsight:
 
 With no `existingSecret`, the chart creates `hindsight-key-alice-laptop` with a random key; read it with `kubectl get secret hindsight-key-alice-laptop -o jsonpath='{.data.HINDSIGHT_API_KEY}' | base64 -d`. With `existingSecret` (and optionally `secretKey`), the key comes from your own Secret. Either way it's imported when the gateway starts. To revoke it, delete or disable it in the admin UI: that takes effect at once, without restarting anything.
 
+## A Hindsight UI for each person
+
+Hindsight's own UI (`hindsight.ingress`) sees every bank. To let each person browse their own memory (Home with its graph, Memories, Recall, Reflect, Documents, Entities, and so on) without seeing anyone else's, turn on the per-person UI:
+
+```yaml
+hindsight:
+  userUi:
+    enabled: true
+    ingress:
+      enabled: true
+      className: traefik
+      host: my-memory.example.com
+      tls: {secretName: my-memory-tls}
+```
+
+It's Hindsight's UI with a small patch ([hindsight-gateway's `control-plane/`](https://github.com/omar2535/hindsight-gateway/tree/main/control-plane)): each person signs in with a gateway key, and every call goes through the gateway with that key, so it opens their bank only. Create a key for each person in the gateway's admin UI (**New key**, bank `hermes-<name>`), their own rather than their agent's, so you can revoke one without the other, and give it to them like a password. They paste it on the sign-in page; sessions last 30 days.
+
+The image (`ghcr.io/omar2535/hindsight-ui`) is tagged with the Hindsight version it's built from: keep `hindsight.userUi.image.tag` on `hindsight.image.tag`'s version (Renovate bumps both in one PR). It needs `hindsight.gateway` (the chart refuses to render without it) and hindsight-gateway 0.3.0 or later.
+
 ## Secrets
 
 If you don't set `existingSecret`, the chart creates `hermes-<name>-secrets`, `hindsight-secrets` and `open-webui-secrets` itself. Random keys are generated once and survive upgrades, and the Secrets are left behind on uninstall. The catch is that LLM keys then come from your values (`llm.apiKey`, `tenants[].llmApiKey`) and end up in Helm's release history.
@@ -120,6 +139,7 @@ If your values live in Git, create the Secrets yourself (SOPS, Sealed Secrets, E
 |---|---|
 | `tenants[].existingSecret` | `API_SERVER_KEY` and `HINDSIGHT_API_KEY` (any random strings, e.g. `openssl rand -hex 32`), plus the key named by `llm.apiKeyEnv` |
 | `hindsight.existingSecret` | `HINDSIGHT_API_LLM_API_KEY`, `HINDSIGHT_CP_ACCESS_KEY` (the UI login) |
+| `hindsight.userUi.existingSecret` | `HINDSIGHT_CP_ACCESS_KEY` (any random string: it seals the per-person UI's sessions, nobody types it) |
 | `openWebui.existingSecret` | `WEBUI_SECRET_KEY` |
 
 Open WebUI reads each agent's `API_SERVER_KEY` straight out of that person's Secret, and the Hindsight gateway imports each `HINDSIGHT_API_KEY` the same way, so you never have to copy keys around. A Secret without `HINDSIGHT_API_KEY` doesn't break anything else, but that person's agent can't use memory until you add it (and restart the gateway) or create a key for them in the admin UI.

@@ -31,6 +31,11 @@
       "description": "Hermes Agent is 0.x: a minor can change config or CLI behaviour the box script relies on, so each minor is its own PR",
       "matchPackageNames": ["nousresearch/hermes-agent"],
       "separateMinorPatch": true
+    },
+    {
+      "description": "hindsight.userUi is Hindsight's UI rebuilt with a patch and tagged with Hindsight's version: bump them in one PR. Until the patched build of a version exists, the PR bumps only Hindsight and the per-person UI stays on its older version",
+      "matchPackageNames": ["ghcr.io/vectorize-io/hindsight", "ghcr.io/omar2535/hindsight-ui"],
+      "groupName": "Hindsight"
     }
   ]
 }

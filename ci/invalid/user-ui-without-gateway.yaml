@@ -1,0 +1,8 @@
+# Must fail: without the gateway, the per-person UI would have nothing limiting it to one bank.
+tenants: [{name: alice}]
+llm: {baseUrl: http://x/v1, model: m}
+hindsight:
+  userUi:
+    enabled: true
+  gateway:
+    enabled: false
